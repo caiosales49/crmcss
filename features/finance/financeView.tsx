@@ -76,13 +76,13 @@ export function FinanceView() {
           Novo lançamento
         </Button>
       </PageHeader>
-      <section className="mb-4 grid gap-4 sm:grid-cols-3">
-        <Card><CardContent className="pt-5"><p className="text-sm text-muted-foreground">Receitas</p><p className="mt-1 text-2xl font-semibold">{formatCurrency(revenue)}</p></CardContent></Card>
-        <Card><CardContent className="pt-5"><p className="text-sm text-muted-foreground">Despesas</p><p className="mt-1 text-2xl font-semibold">{formatCurrency(expenses)}</p></CardContent></Card>
-        <Card><CardContent className="pt-5"><p className="text-sm text-muted-foreground">Saldo</p><p className="mt-1 text-2xl font-semibold">{formatCurrency(revenue - expenses)}</p></CardContent></Card>
+      <section className="mb-4 grid min-w-0 gap-4 sm:grid-cols-3">
+        <Card className="min-w-0"><CardContent className="pt-5"><p className="text-sm text-muted-foreground">Receitas</p><p className="mt-1 truncate text-2xl font-semibold">{formatCurrency(revenue)}</p></CardContent></Card>
+        <Card className="min-w-0"><CardContent className="pt-5"><p className="text-sm text-muted-foreground">Despesas</p><p className="mt-1 truncate text-2xl font-semibold">{formatCurrency(expenses)}</p></CardContent></Card>
+        <Card className="min-w-0"><CardContent className="pt-5"><p className="text-sm text-muted-foreground">Saldo</p><p className="mt-1 truncate text-2xl font-semibold">{formatCurrency(revenue - expenses)}</p></CardContent></Card>
       </section>
-      <section className="grid gap-4 xl:grid-cols-[380px_1fr]">
-        <Card>
+      <section className="grid min-w-0 gap-4 xl:grid-cols-[380px_minmax(0,1fr)]">
+        <Card className="min-w-0">
           <CardHeader><CardTitle>Lançamento</CardTitle></CardHeader>
           <CardContent>
             <form id="finance-form" className="grid gap-3" onSubmit={form.handleSubmit((values) => create.mutate(values))}>
@@ -97,9 +97,27 @@ export function FinanceView() {
             </form>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="min-w-0">
           <CardHeader><CardTitle>Fluxo de caixa</CardTitle></CardHeader>
-          <CardContent className="overflow-x-auto">
+          <CardContent>
+            <div className="grid gap-3 md:hidden">
+              {(transactions.data ?? []).map((item) => (
+                <div key={item.id} className="rounded-md border border-border p-3 text-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{item.description}</p>
+                      <p className="mt-1 truncate text-muted-foreground">{item.category}</p>
+                    </div>
+                    <Badge tone={item.type === "revenue" ? "success" : "danger"}>{item.type}</Badge>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <p className="font-medium">{formatCurrency(item.amount)}</p>
+                    <Badge>{item.status}</Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="text-muted-foreground"><tr><th className="py-2">Descrição</th><th>Categoria</th><th>Tipo</th><th>Valor</th><th>Status</th></tr></thead>
               <tbody>
@@ -114,6 +132,7 @@ export function FinanceView() {
                 ))}
               </tbody>
             </table>
+            </div>
           </CardContent>
         </Card>
       </section>

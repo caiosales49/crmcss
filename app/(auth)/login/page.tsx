@@ -25,7 +25,7 @@ export default function LoginPage() {
             Multi-tenant com Firebase
           </div>
           <h1 className="text-4xl font-semibold tracking-normal sm:text-5xl">
-            CRM SaaS para gestão comercial css develop
+            CRM  para gestão comercial
           </h1>
           <p className="mt-4 max-w-xl text-base text-muted-foreground">
             Produtos, estoque, PDV, clientes, financeiro e relatórios em uma base

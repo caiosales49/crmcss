@@ -93,8 +93,8 @@ export function ProductsView() {
     <>
       <PageHeader title="Produtos" description="Cadastro, estoque, código de barras e status." />
 
-      <section className="grid gap-4 xl:grid-cols-[420px_1fr]">
-        <Card>
+      <section className="grid min-w-0 gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
+        <Card className="min-w-0">
           <CardHeader className="gap-3">
             <CardTitle>Novo produto</CardTitle>
             <BarcodeScanner onDetected={setBarcode} />
@@ -114,7 +114,7 @@ export function ProductsView() {
               <Field label="Código de barras">
                 <Input placeholder="Leia com scanner ou digite" {...form.register("barcode")} />
               </Field>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Preço de custo">
                   <Input type="number" step="0.01" placeholder="0,00" {...form.register("costPrice")} />
                 </Field>
@@ -122,7 +122,7 @@ export function ProductsView() {
                   <Input type="number" step="0.01" placeholder="0,00" {...form.register("salePrice")} />
                 </Field>
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid gap-3 sm:grid-cols-3">
                 <Field label="Quantidade">
                   <Input type="number" placeholder="0" {...form.register("quantity")} />
                 </Field>
@@ -173,7 +173,7 @@ export function ProductsView() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0">
           <CardHeader>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle>Catálogo</CardTitle>
@@ -183,7 +183,46 @@ export function ProductsView() {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="overflow-x-auto">
+          <CardContent>
+            <div className="grid gap-3 md:hidden">
+              {(productsQuery.data ?? []).map((product) => (
+                <div key={product.id} className="rounded-md border border-border p-3 text-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{product.name}</p>
+                      <p className="mt-1 truncate text-muted-foreground">{product.sku}</p>
+                    </div>
+                    <Badge tone={product.status === "active" ? "success" : "neutral"}>{product.status}</Badge>
+                  </div>
+                  <div className="mt-3 grid gap-2 text-muted-foreground">
+                    <p>Preço: <span className="font-medium text-foreground">{formatCurrency(product.salePrice)}</span></p>
+                    <p>
+                      Estoque:{" "}
+                      <Badge tone={product.quantity <= product.minimumStock ? "warning" : "neutral"}>
+                        {product.quantity} {product.unit}
+                      </Badge>
+                    </p>
+                  </div>
+                  <div className="mt-3 flex justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      aria-label="Duplicar produto"
+                      onClick={() => user && void ProductService.duplicate(product, user.uid).then(() => queryClient.invalidateQueries({ queryKey: ["products"] }))}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      aria-label="Inativar produto"
+                      onClick={() => void ProductService.update(product.id, { status: "inactive" }).then(() => queryClient.invalidateQueries({ queryKey: ["products"] }))}
+                    >
+                      <Power className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead className="text-muted-foreground">
                 <tr>
@@ -229,6 +268,7 @@ export function ProductsView() {
                 ))}
               </tbody>
             </table>
+            </div>
           </CardContent>
         </Card>
       </section>
