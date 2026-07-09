@@ -3,11 +3,7 @@
 import { getAnalytics, isSupported } from "firebase/analytics";
 import { getApps, initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
-import {
-  initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager
-} from "firebase/firestore";
+import { getFirestore } from "firebase/firestore";
 import { getMessaging, isSupported as isMessagingSupported } from "firebase/messaging";
 import { getRemoteConfig } from "firebase/remote-config";
 import { getStorage } from "firebase/storage";
@@ -19,13 +15,7 @@ const app = hasFirebaseConfig()
 
 export const firebaseApp = app;
 export const auth = app ? getAuth(app) : undefined;
-export const db = app
-  ? initializeFirestore(app, {
-      localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager()
-      })
-    })
-  : undefined;
+export const db = app ? getFirestore(app) : undefined;
 export const storage = app ? getStorage(app) : undefined;
 export const googleProvider = new GoogleAuthProvider();
 

@@ -17,6 +17,7 @@ import type { UserProfile } from "@/types/company";
 import type { Subscription } from "@/types/subscription";
 
 const cachedAuthKey = "crm.auth.snapshot";
+const authFallbackMs = 3500;
 
 interface AuthContextValue {
   user: User | null;
@@ -65,28 +66,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const hydrateProfile = useCallback(async (currentUser: User | null) => {
-    setUser(currentUser);
-    if (!currentUser) {
-      setProfile(null);
-      setSubscription(null);
-      clearCachedAuth();
-      setLoading(false);
-      return;
-    }
+    try {
+      setUser(currentUser);
+      if (!currentUser) {
+        setProfile(null);
+        setSubscription(null);
+        clearCachedAuth();
+        return;
+      }
 
-    const nextProfile = await AuthService.getProfile(currentUser.uid);
-    setProfile(nextProfile);
-    let nextSubscription: Subscription | null = null;
-    if (nextProfile) {
-      nextSubscription = await SubscriptionService.getByCompany(nextProfile.companyId);
+      let nextProfile = await AuthService.getProfile(currentUser.uid);
+      if (!nextProfile) {
+        await AuthService.ensureTenant(currentUser);
+        nextProfile = await AuthService.getProfile(currentUser.uid);
+      }
+
+      setProfile(nextProfile);
+      let nextSubscription: Subscription | null = null;
+      if (nextProfile) {
+        nextSubscription = await SubscriptionService.getByCompany(nextProfile.companyId);
+      }
+      setSubscription(nextSubscription);
+      writeCachedAuth({ profile: nextProfile, subscription: nextSubscription });
+    } catch (error) {
+      console.error("Falha ao atualizar sessão", error);
+    } finally {
+      setLoading(false);
     }
-    setSubscription(nextSubscription);
-    writeCachedAuth({ profile: nextProfile, subscription: nextSubscription });
-    setLoading(false);
   }, []);
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
+    const fallback = window.setTimeout(() => {
+      setLoading(false);
+    }, authFallbackMs);
     try {
       unsubscribe = AuthService.onAuthStateChanged((nextUser) => {
         void hydrateProfile(nextUser);
@@ -94,7 +107,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       setLoading(false);
     }
-    return () => unsubscribe?.();
+    return () => {
+      window.clearTimeout(fallback);
+      unsubscribe?.();
+    };
   }, [hydrateProfile]);
 
   const value = useMemo<AuthContextValue>(
