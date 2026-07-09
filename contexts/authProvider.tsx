@@ -16,6 +16,8 @@ import { SubscriptionService } from "@/services/subscriptionService";
 import type { UserProfile } from "@/types/company";
 import type { Subscription } from "@/types/subscription";
 
+const cachedAuthKey = "crm.auth.snapshot";
+
 interface AuthContextValue {
   user: User | null;
   profile: UserProfile | null;
@@ -28,11 +30,38 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+interface CachedAuthSnapshot {
+  profile: UserProfile | null;
+  subscription: Subscription | null;
+}
+
+function readCachedAuth() {
+  if (typeof window === "undefined") return null;
+  try {
+    const cached = window.localStorage.getItem(cachedAuthKey);
+    return cached ? (JSON.parse(cached) as CachedAuthSnapshot) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedAuth(snapshot: CachedAuthSnapshot) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(cachedAuthKey, JSON.stringify(snapshot));
+}
+
+function clearCachedAuth() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(cachedAuthKey);
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [subscription, setSubscription] = useState<Subscription | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(() => readCachedAuth()?.profile ?? null);
+  const [subscription, setSubscription] = useState<Subscription | null>(
+    () => readCachedAuth()?.subscription ?? null
+  );
   const [loading, setLoading] = useState(true);
 
   const hydrateProfile = useCallback(async (currentUser: User | null) => {
@@ -40,15 +69,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!currentUser) {
       setProfile(null);
       setSubscription(null);
+      clearCachedAuth();
       setLoading(false);
       return;
     }
 
     const nextProfile = await AuthService.getProfile(currentUser.uid);
     setProfile(nextProfile);
+    let nextSubscription: Subscription | null = null;
     if (nextProfile) {
-      setSubscription(await SubscriptionService.getByCompany(nextProfile.companyId));
+      nextSubscription = await SubscriptionService.getByCompany(nextProfile.companyId);
     }
+    setSubscription(nextSubscription);
+    writeCachedAuth({ profile: nextProfile, subscription: nextSubscription });
     setLoading(false);
   }, []);
 
@@ -78,6 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       logout: async () => {
         await AuthService.logout();
+        clearCachedAuth();
         router.push("/login");
       }
     }),
