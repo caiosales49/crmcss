@@ -1,0 +1,136 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userCompanyId() {
+      return userProfile().data.companyId;
+    }
+
+    function sameCompany(companyId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && userCompanyId() == companyId;
+    }
+
+    function ownsUserDocument(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function ownerOfCompany(companyId) {
+      return sameCompany(companyId)
+        && get(/databases/$(database)/documents/companies/$(companyId)).data.ownerId == request.auth.uid;
+    }
+
+    function validTenantCreate() {
+      return request.resource.data.companyId is string
+        && sameCompany(request.resource.data.companyId);
+    }
+
+    function validTenantReadUpdateDelete() {
+      return resource.data.companyId is string
+        && sameCompany(resource.data.companyId);
+    }
+
+    match /users/{userId} {
+      allow read: if ownsUserDocument(userId) || sameCompany(resource.data.companyId);
+      allow create: if ownsUserDocument(userId)
+        && request.resource.data.companyId == userId
+        && request.resource.data.role == "owner";
+      allow update: if ownsUserDocument(userId) || ownerOfCompany(resource.data.companyId);
+      allow delete: if false;
+    }
+
+    match /companies/{companyId} {
+      allow read: if sameCompany(companyId);
+      allow create: if signedIn()
+        && request.auth.uid == companyId
+        && request.resource.data.ownerId == request.auth.uid;
+      allow update: if sameCompany(companyId);
+      allow delete: if ownerOfCompany(companyId);
+    }
+
+    match /subscriptions/{subscriptionId} {
+      allow read: if sameCompany(resource.data.companyId) || sameCompany(subscriptionId);
+      allow create: if signedIn()
+        && subscriptionId == request.auth.uid
+        && request.resource.data.companyId == request.auth.uid
+        && request.resource.data.status == "trialing";
+      allow update, delete: if false;
+    }
+
+    match /products/{documentId} {
+      allow read: if validTenantReadUpdateDelete();
+      allow create: if validTenantCreate();
+      allow update, delete: if validTenantReadUpdateDelete();
+    }
+
+    match /categories/{documentId} {
+      allow read: if validTenantReadUpdateDelete();
+      allow create: if validTenantCreate();
+      allow update, delete: if validTenantReadUpdateDelete();
+    }
+
+    match /suppliers/{documentId} {
+      allow read: if validTenantReadUpdateDelete();
+      allow create: if validTenantCreate();
+      allow update, delete: if validTenantReadUpdateDelete();
+    }
+
+    match /customers/{documentId} {
+      allow read: if validTenantReadUpdateDelete();
+      allow create: if validTenantCreate();
+      allow update, delete: if validTenantReadUpdateDelete();
+    }
+
+    match /sales/{documentId} {
+      allow read: if validTenantReadUpdateDelete();
+      allow create: if validTenantCreate();
+      allow update: if validTenantReadUpdateDelete();
+      allow delete: if false;
+    }
+
+    match /inventoryMovements/{documentId} {
+      allow read: if validTenantReadUpdateDelete();
+      allow create: if validTenantCreate();
+      allow update, delete: if false;
+    }
+
+    match /financialTransactions/{documentId} {
+      allow read: if validTenantReadUpdateDelete();
+      allow create: if validTenantCreate();
+      allow update, delete: if validTenantReadUpdateDelete();
+    }
+
+    match /reports/{documentId} {
+      allow read: if validTenantReadUpdateDelete();
+      allow create: if validTenantCreate();
+      allow update, delete: if false;
+    }
+
+    match /settings/{documentId} {
+      allow read: if validTenantReadUpdateDelete();
+      allow create: if validTenantCreate();
+      allow update, delete: if validTenantReadUpdateDelete();
+    }
+
+    match /notifications/{documentId} {
+      allow read: if validTenantReadUpdateDelete();
+      allow create, update: if validTenantCreate() || validTenantReadUpdateDelete();
+      allow delete: if validTenantReadUpdateDelete();
+    }
+
+    match /logs/{documentId} {
+      allow read: if ownerOfCompany(resource.data.companyId);
+      allow create: if validTenantCreate();
+      allow update, delete: if false;
+    }
+  }
+}
