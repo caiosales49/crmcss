@@ -2,8 +2,8 @@
 
 ## Branches
 
-- `test`: recebe todos os ajustes primeiro e publica em um canal de teste do Firebase Hosting.
-- `main`: recebe somente alterações aprovadas em `test` e publica em produção.
+- `test`: recebe todos os ajustes primeiro e publica em um canal de teste do Firebase Hosting por deploy manual até os secrets do GitHub estarem completos.
+- `main`: recebe somente alterações aprovadas em `test` e publica em produção por deploy manual até os secrets do GitHub estarem completos.
 
 ## Sequência
 
@@ -13,6 +13,13 @@
 4. Valide o app no canal de teste.
 5. Faça merge de `test` para `main`.
 6. Envie `main` para publicar em produção.
+
+Enquanto os secrets `NEXT_PUBLIC_*` não estiverem cadastrados no GitHub, publique manualmente:
+
+```bash
+npx firebase-tools hosting:channel:deploy test --project crmcss-30b79 --expires 30d
+npx firebase-tools deploy --only hosting --project crmcss-30b79
+```
 
 ## Backend Firebase
 

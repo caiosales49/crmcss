@@ -1,9 +1,7 @@
 name: Deploy test branch
 
 on:
-  push:
-    branches:
-      - test
+  workflow_dispatch:
 
 jobs:
   build_and_deploy:
