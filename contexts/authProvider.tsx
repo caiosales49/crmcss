@@ -17,7 +17,6 @@ import type { UserProfile } from "@/types/company";
 import type { Subscription } from "@/types/subscription";
 
 const cachedAuthKey = "crm.auth.snapshot";
-const authFallbackMs = 3500;
 
 interface AuthContextValue {
   user: User | null;
@@ -97,9 +96,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
-    const fallback = window.setTimeout(() => {
-      setLoading(false);
-    }, authFallbackMs);
     try {
       unsubscribe = AuthService.onAuthStateChanged((nextUser) => {
         void hydrateProfile(nextUser);
@@ -107,10 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       setLoading(false);
     }
-    return () => {
-      window.clearTimeout(fallback);
-      unsubscribe?.();
-    };
+    return () => unsubscribe?.();
   }, [hydrateProfile]);
 
   const value = useMemo<AuthContextValue>(

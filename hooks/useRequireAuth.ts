@@ -11,14 +11,14 @@ export function useRequireAuth() {
 
   useEffect(() => {
     if (auth.loading) return;
-    if (!auth.user) {
+    if (!auth.user && !auth.profile) {
       router.replace("/login");
       return;
     }
-    if (!canUseSubscription(auth.subscription)) {
+    if (auth.subscription && !canUseSubscription(auth.subscription)) {
       router.replace("/settings?tab=subscription");
     }
-  }, [auth.loading, auth.subscription, auth.user, router]);
+  }, [auth.loading, auth.profile, auth.subscription, auth.user, router]);
 
   return auth;
 }
