@@ -46,7 +46,6 @@ export const AuthService = {
   async signInWithGoogle() {
     const clients = firebaseClients();
     const credential = await signInWithPopup(clients.auth, googleProvider);
-    await this.ensureTenant(credential.user);
     return credential.user;
   },
 

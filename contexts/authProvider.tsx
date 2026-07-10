@@ -115,7 +115,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       signIn: async () => {
         const signedUser = await AuthService.signInWithGoogle();
-        await hydrateProfile(signedUser);
+        setUser(signedUser);
+        void hydrateProfile(signedUser);
         router.push("/dashboard");
       },
       logout: async () => {

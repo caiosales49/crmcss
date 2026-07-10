@@ -2,14 +2,23 @@
 
 import { motion } from "framer-motion";
 import { Chrome, ShieldCheck } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useAuth } from "@/contexts/authProvider";
 import { hasFirebaseConfig } from "@/lib/env";
 
 export default function LoginPage() {
-  const { signIn, loading } = useAuth();
+  const router = useRouter();
+  const { signIn, loading, user, profile } = useAuth();
   const configured = hasFirebaseConfig();
+
+  useEffect(() => {
+    if (!loading && (user || profile)) {
+      router.replace("/dashboard");
+    }
+  }, [loading, profile, router, user]);
 
   return (
     <main className="grid min-h-screen bg-background lg:grid-cols-[1.1fr_0.9fr]">
