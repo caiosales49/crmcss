@@ -67,7 +67,7 @@ export function SalesView() {
     if (!companyId) return;
     const product = await ProductService.findByBarcode(companyId, code);
     if (product) addProduct(product);
-    setTerm(code);
+    setTerm("");
   }, [addProduct, companyId]);
 
   const totals = useMemo(() => {
@@ -128,12 +128,7 @@ export function SalesView() {
 
   return (
     <>
-      <PageHeader title="PDV" description="Venda rápida por busca, SKU, código interno ou código de barras.">
-        <Button disabled={cart.length === 0 || finalize.isPending} onClick={() => finalize.mutate()}>
-          <CreditCard className="h-4 w-4" />
-          Finalizar venda
-        </Button>
-      </PageHeader>
+      <PageHeader title="PDV" description="Venda rápida por busca, SKU, código interno ou código de barras." />
       <section className="grid gap-4 xl:grid-cols-[1fr_420px]">
         <Card>
           <CardHeader>
@@ -180,7 +175,16 @@ export function SalesView() {
                 </div>
               ))}
             </div>
-            <Input type="number" step="0.01" placeholder="Desconto" value={discount} onChange={(event) => setDiscount(Number(event.target.value))} />
+            <label className="grid gap-1.5 text-sm font-medium text-foreground">
+              <span>Desconto da venda</span>
+              <Input
+                type="number"
+                step="0.01"
+                placeholder="0,00"
+                value={discount || ""}
+                onChange={(event) => setDiscount(Number(event.target.value))}
+              />
+            </label>
             <Select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}>
               <option value="pix">Pix</option>
               <option value="cash">Dinheiro</option>
@@ -193,6 +197,14 @@ export function SalesView() {
               <div className="flex justify-between text-sm"><span>Subtotal</span><strong>{formatCurrency(totals.subtotal)}</strong></div>
               <div className="mt-2 flex justify-between text-lg"><span>Total</span><strong>{formatCurrency(totals.total)}</strong></div>
             </div>
+            <Button
+              className="w-full"
+              disabled={cart.length === 0 || finalize.isPending}
+              onClick={() => finalize.mutate()}
+            >
+              <CreditCard className="h-4 w-4" />
+              Finalizar venda
+            </Button>
           </CardContent>
         </Card>
       </section>

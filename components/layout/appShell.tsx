@@ -22,10 +22,10 @@ import { cn } from "@/lib/cn";
 
 const navigation = [
   { href: "/dashboard", label: "Dashboard", icon: Home },
+  { href: "/sales", label: "PDV", icon: ShoppingCart },
   { href: "/products", label: "Produtos", icon: Package },
   { href: "/inventory", label: "Estoque", icon: Boxes },
   { href: "/customers", label: "Clientes", icon: Users },
-  { href: "/sales", label: "PDV", icon: ShoppingCart },
   { href: "/finance", label: "Financeiro", icon: CreditCard },
   { href: "/reports", label: "Relatórios", icon: FileBarChart },
   { href: "/settings", label: "Configurações", icon: Settings }

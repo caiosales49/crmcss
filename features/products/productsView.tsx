@@ -13,9 +13,11 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { BarcodeScanner } from "@/features/products/barcodeScanner";
 import { useAuth } from "@/contexts/authProvider";
+import { cn } from "@/lib/cn";
 import { formatCurrency, formatPercent } from "@/lib/format";
 import { ProductService } from "@/services/productService";
 import { calculateMargin, productSchema, type ProductFormValues } from "@/validators/productSchema";
+import type { Product } from "@/types/product";
 
 const defaultValues: ProductFormValues = {
   name: "",
@@ -43,6 +45,19 @@ function Field({
       {children}
     </label>
   );
+}
+
+function productHasLowStock(product: Product) {
+  const quantity = parseStockNumber(product.quantity);
+  const minimumStock = parseStockNumber(product.minimumStock);
+  return Number.isFinite(quantity) && Number.isFinite(minimumStock) && quantity <= minimumStock;
+}
+
+function parseStockNumber(value: unknown) {
+  const parsed = typeof value === "string"
+    ? Number(value.replace(",", "."))
+    : Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 export function ProductsView() {
@@ -78,7 +93,10 @@ export function ProductsView() {
     },
     onSuccess: async () => {
       form.reset(defaultValues);
-      await queryClient.invalidateQueries({ queryKey: ["products"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["products"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      ]);
     }
   });
 
@@ -91,8 +109,11 @@ export function ProductsView() {
       setRestockProductId(null);
       setRestockQuantity("");
       setActionError(null);
-      await queryClient.invalidateQueries({ queryKey: ["products"] });
-      await queryClient.invalidateQueries({ queryKey: ["inventoryMovements"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["products"] }),
+        queryClient.invalidateQueries({ queryKey: ["inventoryMovements"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      ]);
     },
     onError: (error) => {
       setActionError(error instanceof Error ? error.message : "Não foi possível repor o estoque.");
@@ -103,7 +124,10 @@ export function ProductsView() {
     mutationFn: (productId: string) => ProductService.delete(productId),
     onSuccess: async () => {
       setActionError(null);
-      await queryClient.invalidateQueries({ queryKey: ["products"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["products"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      ]);
     },
     onError: (error) => {
       setActionError(error instanceof Error ? error.message : "Não foi possível excluir o produto.");
@@ -243,7 +267,13 @@ export function ProductsView() {
             )}
             <div className="grid gap-3 md:hidden">
               {(productsQuery.data ?? []).map((product) => (
-                <div key={product.id} className="rounded-md border border-border p-3 text-sm">
+                <div
+                  key={product.id}
+                  className={cn(
+                    "rounded-md border border-border p-3 text-sm",
+                    productHasLowStock(product) && "border-destructive bg-destructive/5 ring-1 ring-destructive/20"
+                  )}
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate font-medium">{product.name}</p>
@@ -255,10 +285,16 @@ export function ProductsView() {
                     <p>Preço: <span className="font-medium text-foreground">{formatCurrency(product.salePrice)}</span></p>
                     <p>
                       Estoque:{" "}
-                      <Badge tone={product.quantity <= product.minimumStock ? "warning" : "neutral"}>
+                      <Badge tone={productHasLowStock(product) ? "danger" : "neutral"}>
                         {product.quantity} {product.unit}
                       </Badge>
                     </p>
+                    <p>Mínimo: <span className="font-medium text-foreground">{product.minimumStock} {product.unit}</span></p>
+                    {productHasLowStock(product) && (
+                      <p className="font-medium text-destructive">
+                        Estoque abaixo do mínimo: {product.minimumStock} {product.unit}
+                      </p>
+                    )}
                   </div>
                   <div className="mt-3 flex justify-end gap-1">
                     <Button
@@ -326,6 +362,7 @@ export function ProductsView() {
                   <th>SKU</th>
                   <th>Preço</th>
                   <th>Estoque</th>
+                  <th>Mínimo</th>
                   <th>Status</th>
                   <th className="text-right">Ações</th>
                 </tr>
@@ -333,15 +370,26 @@ export function ProductsView() {
               <tbody>
                 {(productsQuery.data ?? []).map((product) => (
                   <Fragment key={product.id}>
-                  <tr className="border-t border-border">
+                  <tr
+                    className={cn(
+                      "border-t border-border",
+                      productHasLowStock(product) && "border-destructive bg-destructive/5"
+                    )}
+                  >
                     <td className="py-3 font-medium">{product.name}</td>
                     <td>{product.sku}</td>
                     <td>{formatCurrency(product.salePrice)}</td>
                     <td>
-                      <Badge tone={product.quantity <= product.minimumStock ? "warning" : "neutral"}>
+                      <Badge tone={productHasLowStock(product) ? "danger" : "neutral"}>
                         {product.quantity} {product.unit}
                       </Badge>
+                      {productHasLowStock(product) && (
+                        <p className="mt-1 text-xs font-medium text-destructive">
+                          Mínimo: {product.minimumStock} {product.unit}
+                        </p>
+                      )}
                     </td>
+                    <td>{product.minimumStock} {product.unit}</td>
                     <td>
                       <Badge tone={product.status === "active" ? "success" : "neutral"}>{product.status}</Badge>
                     </td>
@@ -379,7 +427,7 @@ export function ProductsView() {
                   </tr>
                   {restockProductId === product.id && (
                     <tr className="border-t border-border bg-muted/50">
-                      <td colSpan={6} className="py-3">
+                      <td colSpan={7} className="py-3">
                         <div className="flex flex-wrap items-center justify-end gap-2">
                           <span className="mr-auto text-sm text-muted-foreground">
                             Repor estoque de <strong className="text-foreground">{product.name}</strong>

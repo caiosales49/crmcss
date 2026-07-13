@@ -4,8 +4,7 @@ import type { Sale } from "@/types/sale";
 import type { CashFlowPoint } from "@/types/finance";
 
 export interface DashboardMetrics {
-  soldToday: number;
-  soldThisMonth: number;
+  soldInPeriod: number;
   salesCount: number;
   productsInStock: number;
   lowStockProducts: number;

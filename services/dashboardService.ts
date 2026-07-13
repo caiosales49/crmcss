@@ -1,15 +1,21 @@
 "use client";
 
-import { endOfMonth, startOfDay, startOfMonth } from "date-fns";
-import { Timestamp } from "firebase/firestore";
+import { eachDayOfInterval, format, isSameDay } from "date-fns";
 import { CustomerService } from "@/services/customerService";
 import { FinanceService } from "@/services/financeService";
 import { ProductService } from "@/services/productService";
 import { SaleService } from "@/services/saleService";
 import type { DashboardData } from "@/types/dashboard";
+import type { FinancialTransaction } from "@/types/finance";
+import type { Sale } from "@/types/sale";
+
+export interface DashboardPeriod {
+  startDate: Date;
+  endDate: Date;
+}
 
 export const DashboardService = {
-  async getOverview(companyId: string): Promise<DashboardData> {
+  async getOverview(companyId: string, period: DashboardPeriod): Promise<DashboardData> {
     const [products, customers, sales, transactions] = await Promise.all([
       ProductService.list(companyId),
       CustomerService.list(companyId),
@@ -17,42 +23,42 @@ export const DashboardService = {
       FinanceService.list(companyId)
     ]);
 
-    const today = Timestamp.fromDate(startOfDay(new Date()));
-    const monthStart = Timestamp.fromDate(startOfMonth(new Date()));
-    const monthEnd = Timestamp.fromDate(endOfMonth(new Date()));
-
-    const paidSales = sales.filter((sale) => sale.status === "paid");
-    const salesToday = paidSales.filter((sale) => sale.createdAt >= today);
-    const salesThisMonth = paidSales.filter(
-      (sale) => sale.createdAt >= monthStart && sale.createdAt <= monthEnd
+    const paidSales = sales.filter(
+      (sale) => sale.status === "paid" && isTimestampInPeriod(sale.createdAt, period)
     );
-    const expenses = transactions
-      .filter((item) => item.type === "expense" && item.status === "paid")
+    const paidTransactions = transactions.filter(
+      (item) =>
+        item.status === "paid" &&
+        isTimestampInPeriod(item.paidAt ?? item.dueAt, period)
+    );
+    const expenses = paidTransactions
+      .filter((item) => item.type === "expense")
       .reduce((sum, item) => sum + item.amount, 0);
     const revenue = paidSales.reduce((sum, sale) => sum + sale.total, 0);
     const profit = paidSales.reduce((sum, sale) => sum + sale.grossProfit, 0) - expenses;
-    const lowStockItems = products.filter((product) => product.quantity <= product.minimumStock);
+    const lowStockItems = products.filter((product) =>
+      isLowStock(product.quantity, product.minimumStock)
+    );
 
     return {
       metrics: {
-        soldToday: salesToday.reduce((sum, sale) => sum + sale.total, 0),
-        soldThisMonth: salesThisMonth.reduce((sum, sale) => sum + sale.total, 0),
-        salesCount: salesThisMonth.length,
-        productsInStock: products.reduce((sum, product) => sum + product.quantity, 0),
+        soldInPeriod: revenue,
+        salesCount: paidSales.length,
+        productsInStock: products.reduce((sum, product) => sum + toNumber(product.quantity), 0),
         lowStockProducts: lowStockItems.length,
         profit,
         revenue,
         expenses,
         cashFlow: revenue - expenses
       },
-      monthlyChart: buildMonthlyChart(salesThisMonth, expenses),
+      monthlyChart: buildPeriodChart(paidSales, paidTransactions, period),
       topProducts: buildTopProducts(paidSales),
       latestSales: paidSales.slice(0, 5),
       latestCustomers: customers.slice(0, 5),
       alerts: lowStockItems.slice(0, 5).map((product) => ({
         id: product.id,
         title: "Estoque baixo",
-        description: `${product.name} está com ${product.quantity} ${product.unit}.`,
+        description: `${product.name} está com ${toNumber(product.quantity)} ${product.unit}. Mínimo: ${toNumber(product.minimumStock)}.`,
         tone: "warning"
       })),
       lowStockItems
@@ -60,19 +66,54 @@ export const DashboardService = {
   }
 };
 
-function buildMonthlyChart(sales: Awaited<ReturnType<typeof SaleService.list>>, expenses: number) {
-  const revenue = sales.reduce((sum, sale) => sum + sale.total, 0);
-  return [
-    {
-      label: "Mês atual",
-      revenue,
-      expense: expenses,
-      balance: revenue - expenses
-    }
-  ];
+function toNumber(value: unknown) {
+  const parsed = typeof value === "string"
+    ? Number(value.replace(",", "."))
+    : Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function buildTopProducts(sales: Awaited<ReturnType<typeof SaleService.list>>) {
+function isLowStock(quantity: unknown, minimumStock: unknown) {
+  return toNumber(quantity) <= toNumber(minimumStock);
+}
+
+function isTimestampInPeriod(timestamp: Sale["createdAt"], period: DashboardPeriod) {
+  const time = timestamp.toMillis();
+  return time >= period.startDate.getTime() && time <= period.endDate.getTime();
+}
+
+function buildPeriodChart(
+  sales: Sale[],
+  transactions: FinancialTransaction[],
+  period: DashboardPeriod
+) {
+  const days = eachDayOfInterval({ start: period.startDate, end: period.endDate });
+  if (days.length > 31) {
+    const revenue = sales.reduce((sum, sale) => sum + sale.total, 0);
+    const expense = transactions
+      .filter((item) => item.type === "expense")
+      .reduce((sum, item) => sum + item.amount, 0);
+    return [{ label: "Período", revenue, expense, balance: revenue - expense }];
+  }
+
+  return days.map((day) => {
+    const revenue = sales
+      .filter((sale) => isSameDay(sale.createdAt.toDate(), day))
+      .reduce((sum, sale) => sum + sale.total, 0);
+    const expense = transactions
+      .filter((item) => item.type === "expense" && isSameDay((item.paidAt ?? item.dueAt).toDate(), day))
+      .reduce((sum, item) => sum + item.amount, 0);
+
+    return {
+      label: format(day, "dd/MM"),
+      revenue,
+      expense,
+      balance: revenue - expense
+    };
+  });
+}
+
+function buildTopProducts(sales: Sale[]) {
   const totals = new Map<string, { name: string; total: number; quantity: number }>();
   for (const sale of sales) {
     for (const item of sale.items) {
