@@ -1,6 +1,17 @@
 "use client";
 
-import { limit, orderBy, query, where, getDocs, serverTimestamp, runTransaction } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  increment,
+  limit,
+  orderBy,
+  query,
+  where,
+  getDocs,
+  serverTimestamp,
+  runTransaction
+} from "firebase/firestore";
 import { db } from "@/firebase/client";
 import { FirestoreRepository } from "@/services/firestoreRepository";
 import type { Product } from "@/types/product";
@@ -47,6 +58,10 @@ export const ProductService = {
     return repository().update(id, input);
   },
 
+  delete(id: string) {
+    return repository().delete(id);
+  },
+
   async duplicate(product: Product, userId: string) {
     const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...copy } = product;
     return repository().create({
@@ -68,6 +83,43 @@ export const ProductService = {
       transaction.update(productRef, {
         quantity,
         updatedBy: userId,
+        updatedAt: serverTimestamp()
+      });
+    });
+  },
+
+  async replenishStock(productId: string, quantity: number, userId: string) {
+    if (!db) throw new Error("Firebase não configurado.");
+    if (quantity <= 0) throw new Error("Informe uma quantidade maior que zero.");
+    const firestore = db;
+
+    await runTransaction(firestore, async (transaction) => {
+      const productRef = repository().docRef(productId);
+      const snapshot = await transaction.get(productRef);
+      if (!snapshot.exists()) throw new Error("Produto não encontrado.");
+
+      const product = snapshot.data() as Product;
+      const nextQuantity = product.quantity + quantity;
+
+      transaction.update(productRef, {
+        quantity: increment(quantity),
+        updatedBy: userId,
+        updatedAt: serverTimestamp()
+      });
+
+      const movementRef = doc(collection(firestore, "inventoryMovements"));
+      transaction.set(movementRef, {
+        companyId: product.companyId,
+        productId,
+        productName: product.name,
+        type: "in",
+        quantity,
+        previousQuantity: product.quantity,
+        nextQuantity,
+        reason: "Reposição de estoque",
+        createdBy: userId,
+        updatedBy: userId,
+        createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
     });

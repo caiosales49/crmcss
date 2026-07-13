@@ -2,8 +2,8 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, PackagePlus, Power, Search } from "lucide-react";
-import { useCallback, useState } from "react";
+import { Copy, PackagePlus, Power, RotateCcw, Search, Trash2 } from "lucide-react";
+import { Fragment, useCallback, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { PageHeader } from "@/components/layout/pageHeader";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +49,9 @@ export function ProductsView() {
   const { companyId, user } = useAuth();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [restockProductId, setRestockProductId] = useState<string | null>(null);
+  const [restockQuantity, setRestockQuantity] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
     defaultValues
@@ -79,6 +82,34 @@ export function ProductsView() {
     }
   });
 
+  const restockMutation = useMutation({
+    mutationFn: ({ productId, quantity }: { productId: string; quantity: number }) => {
+      if (!user) throw new Error("Sessão inválida.");
+      return ProductService.replenishStock(productId, quantity, user.uid);
+    },
+    onSuccess: async () => {
+      setRestockProductId(null);
+      setRestockQuantity("");
+      setActionError(null);
+      await queryClient.invalidateQueries({ queryKey: ["products"] });
+      await queryClient.invalidateQueries({ queryKey: ["inventoryMovements"] });
+    },
+    onError: (error) => {
+      setActionError(error instanceof Error ? error.message : "Não foi possível repor o estoque.");
+    }
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (productId: string) => ProductService.delete(productId),
+    onSuccess: async () => {
+      setActionError(null);
+      await queryClient.invalidateQueries({ queryKey: ["products"] });
+    },
+    onError: (error) => {
+      setActionError(error instanceof Error ? error.message : "Não foi possível excluir o produto.");
+    }
+  });
+
   const margin = calculateMargin(Number(costPrice), Number(salePrice));
 
   const setBarcode = useCallback(
@@ -88,6 +119,27 @@ export function ProductsView() {
     },
     [form]
   );
+
+  function openRestock(productId: string) {
+    setActionError(null);
+    setRestockQuantity("");
+    setRestockProductId((current) => (current === productId ? null : productId));
+  }
+
+  function submitRestock(productId: string) {
+    const quantity = Number(restockQuantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      setActionError("Informe uma quantidade maior que zero para repor.");
+      return;
+    }
+    restockMutation.mutate({ productId, quantity });
+  }
+
+  function deleteProduct(productId: string, productName: string) {
+    const confirmed = window.confirm(`Excluir o produto "${productName}"? Essa ação não pode ser desfeita.`);
+    if (!confirmed) return;
+    deleteMutation.mutate(productId);
+  }
 
   return (
     <>
@@ -184,6 +236,11 @@ export function ProductsView() {
             </div>
           </CardHeader>
           <CardContent>
+            {actionError && (
+              <div className="mb-3 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                {actionError}
+              </div>
+            )}
             <div className="grid gap-3 md:hidden">
               {(productsQuery.data ?? []).map((product) => (
                 <div key={product.id} className="rounded-md border border-border p-3 text-sm">
@@ -205,6 +262,13 @@ export function ProductsView() {
                   </div>
                   <div className="mt-3 flex justify-end gap-1">
                     <Button
+                      variant="secondary"
+                      aria-label="Repor estoque"
+                      onClick={() => openRestock(product.id)}
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                    </Button>
+                    <Button
                       variant="ghost"
                       aria-label="Duplicar produto"
                       onClick={() => user && void ProductService.duplicate(product, user.uid).then(() => queryClient.invalidateQueries({ queryKey: ["products"] }))}
@@ -218,7 +282,39 @@ export function ProductsView() {
                     >
                       <Power className="h-4 w-4" />
                     </Button>
+                    <Button
+                      variant="danger"
+                      aria-label="Excluir produto"
+                      disabled={deleteMutation.isPending}
+                      onClick={() => deleteProduct(product.id, product.name)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
+                  {restockProductId === product.id && (
+                    <div className="mt-3 grid gap-2 rounded-md bg-muted p-3">
+                      <Input
+                        type="number"
+                        min="1"
+                        step="1"
+                        placeholder="Quantidade para repor"
+                        value={restockQuantity}
+                        onChange={(event) => setRestockQuantity(event.target.value)}
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          className="flex-1"
+                          disabled={restockMutation.isPending}
+                          onClick={() => submitRestock(product.id)}
+                        >
+                          Confirmar reposição
+                        </Button>
+                        <Button variant="secondary" onClick={() => setRestockProductId(null)}>
+                          Cancelar
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -236,7 +332,8 @@ export function ProductsView() {
               </thead>
               <tbody>
                 {(productsQuery.data ?? []).map((product) => (
-                  <tr key={product.id} className="border-t border-border">
+                  <Fragment key={product.id}>
+                  <tr className="border-t border-border">
                     <td className="py-3 font-medium">{product.name}</td>
                     <td>{product.sku}</td>
                     <td>{formatCurrency(product.salePrice)}</td>
@@ -249,6 +346,13 @@ export function ProductsView() {
                       <Badge tone={product.status === "active" ? "success" : "neutral"}>{product.status}</Badge>
                     </td>
                     <td className="text-right">
+                      <Button
+                        variant="secondary"
+                        aria-label="Repor estoque"
+                        onClick={() => openRestock(product.id)}
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                      </Button>
                       <Button
                         variant="ghost"
                         aria-label="Duplicar produto"
@@ -263,8 +367,46 @@ export function ProductsView() {
                       >
                         <Power className="h-4 w-4" />
                       </Button>
+                      <Button
+                        variant="danger"
+                        aria-label="Excluir produto"
+                        disabled={deleteMutation.isPending}
+                        onClick={() => deleteProduct(product.id, product.name)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </td>
                   </tr>
+                  {restockProductId === product.id && (
+                    <tr className="border-t border-border bg-muted/50">
+                      <td colSpan={6} className="py-3">
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          <span className="mr-auto text-sm text-muted-foreground">
+                            Repor estoque de <strong className="text-foreground">{product.name}</strong>
+                          </span>
+                          <Input
+                            className="w-40"
+                            type="number"
+                            min="1"
+                            step="1"
+                            placeholder="Quantidade"
+                            value={restockQuantity}
+                            onChange={(event) => setRestockQuantity(event.target.value)}
+                          />
+                          <Button
+                            disabled={restockMutation.isPending}
+                            onClick={() => submitRestock(product.id)}
+                          >
+                            Confirmar
+                          </Button>
+                          <Button variant="secondary" onClick={() => setRestockProductId(null)}>
+                            Cancelar
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
