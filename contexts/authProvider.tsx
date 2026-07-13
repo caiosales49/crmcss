@@ -47,22 +47,38 @@ function readCachedAuth() {
 
 function writeCachedAuth(snapshot: CachedAuthSnapshot) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(cachedAuthKey, JSON.stringify(snapshot));
+  try {
+    window.localStorage.setItem(cachedAuthKey, JSON.stringify(snapshot));
+  } catch {
+    // Ignore storage failures; Firebase auth remains the source of truth.
+  }
 }
 
 function clearCachedAuth() {
   if (typeof window === "undefined") return;
-  window.localStorage.removeItem(cachedAuthKey);
+  try {
+    window.localStorage.removeItem(cachedAuthKey);
+  } catch {
+    // Ignore storage failures during logout/session refresh.
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(() => readCachedAuth()?.profile ?? null);
-  const [subscription, setSubscription] = useState<Subscription | null>(
-    () => readCachedAuth()?.subscription ?? null
-  );
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const cached = readCachedAuth();
+    if (!cached) return;
+    setProfile(cached.profile);
+    setSubscription(cached.subscription);
+    if (cached.profile) {
+      setLoading(false);
+    }
+  }, []);
 
   const hydrateProfile = useCallback(async (currentUser: User | null) => {
     try {
@@ -116,7 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signIn: async () => {
         const signedUser = await AuthService.signInWithGoogle();
         setUser(signedUser);
-        void hydrateProfile(signedUser);
+        await hydrateProfile(signedUser);
         router.push("/dashboard");
       },
       logout: async () => {

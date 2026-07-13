@@ -16,11 +16,6 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
 
   return (
     <AppShell>
-      {loading && (
-        <div className="mb-4 rounded-md border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
-          Atualizando sessão em segundo plano...
-        </div>
-      )}
       {children}
     </AppShell>
   );
