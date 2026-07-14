@@ -294,8 +294,12 @@ export const StoreService = {
       updatedAt: serverTimestamp()
     });
     batch.set(doc(firestore, "users", input.ownerId), {
+      email: ownerEmail,
+      name: input.name.trim(),
+      displayName: input.name.trim(),
       companyId,
       role: "owner",
+      active: true,
       lastActiveStoreId: storeRef.id,
       updatedAt: serverTimestamp()
     }, { merge: true });

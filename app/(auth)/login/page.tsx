@@ -10,6 +10,31 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/authProvider";
 import { hasFirebaseConfig } from "@/lib/env";
 
+function authErrorMessage(error: unknown) {
+  const code = typeof error === "object" && error !== null && "code" in error
+    ? String(error.code)
+    : "";
+  const message = error instanceof Error ? error.message : "";
+  const normalized = `${code} ${message}`.toLowerCase();
+
+  if (normalized.includes("operation-not-allowed")) {
+    return "O cadastro por e-mail está desativado no Firebase. Ative o provedor E-mail/senha no console do projeto.";
+  }
+  if (normalized.includes("email-already-in-use")) {
+    return "Este e-mail já possui uma conta. Entre com a senha cadastrada.";
+  }
+  if (normalized.includes("invalid-email")) {
+    return "Informe um e-mail válido.";
+  }
+  if (normalized.includes("weak-password")) {
+    return "A senha precisa ter pelo menos 6 caracteres.";
+  }
+  if (normalized.includes("network-request-failed")) {
+    return "Não foi possível conectar ao Firebase. Verifique sua internet e tente novamente.";
+  }
+  return message || "Não foi possível autenticar.";
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const { createAccountWithEmail, signIn, signInWithEmail, loading, user, profile } = useAuth();
@@ -46,7 +71,7 @@ export default function LoginPage() {
         await signInWithEmail(email, password);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível autenticar.");
+      setError(authErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
