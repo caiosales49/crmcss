@@ -42,8 +42,8 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
 
   if ((loading || !user) && !hasUnlockedApp) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
-        Verificando sua conta...
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
       </div>
     );
   }
@@ -73,7 +73,7 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
   return (
     <AppShell>
       {children}
-      {(loading || store.loading) && <SessionRefreshIndicator />}
+      {loading && <SessionRefreshIndicator />}
       <PlatformMessageModal />
     </AppShell>
   );

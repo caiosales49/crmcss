@@ -165,7 +165,7 @@ export const StoreService = {
         where("status", "==", "active")
       )
     );
-    await Promise.all(memberships.docs.map(async (item) => {
+    void Promise.all(memberships.docs.map(async (item) => {
       const member = item.data() as StoreMember;
       if (member.userId === user.uid) return;
       try {
@@ -209,12 +209,12 @@ export const StoreService = {
     const allStores = Array.from(
       new Map([...memberStores, ...ownedStores].map((store) => [store.id, store])).values()
     );
-    await Promise.all(
+    void Promise.all(
       ownedStores.map((store) => ensureOwnerMembership(store, user).catch((error) => {
         console.warn("Não foi possível criar o vínculo de proprietário da loja.", error);
       }))
     );
-    await Promise.all(
+    void Promise.all(
       allStores.map((store) => PlatformService.ensureAccountForStore({
         accountId: store.accountId ?? store.companyId,
         ownerId: store.ownerId,

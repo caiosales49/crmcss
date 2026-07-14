@@ -89,23 +89,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (userStores.length > 0) {
         const lastLocalStoreId = readLastStoreId(user.uid);
         const lastLocalStore = userStores.find((store) => store.id === lastLocalStoreId);
-        const selected = lastLocalStore ?? await StoreService.selectLastOrFirstStore(user.uid, userStores);
+        const selected = lastLocalStore ?? userStores[0];
         setStores(userStores);
-        setSelectedStoreId(selected?.id ?? userStores[0].id);
+        setSelectedStoreId(selected.id);
         setNeedsFirstStore(false);
-        if (selected?.id) {
-          writeLastStoreId(user.uid, selected.id);
-          void StoreService.updateLastActiveStore(user.uid, selected.id);
-        }
-        const accountId = selected?.accountId ?? selected?.companyId ?? userStores[0].accountId ?? userStores[0].companyId;
-        const [account, message] = accountId
-          ? await Promise.all([
+        setLoading(false);
+        writeLastStoreId(user.uid, selected.id);
+        void StoreService.updateLastActiveStore(user.uid, selected.id);
+        const accountId = selected.accountId ?? selected.companyId;
+        if (accountId) {
+          void Promise.all([
             PlatformService.getAccount(accountId).catch(() => null),
             PlatformService.getActiveMessage(accountId).catch(() => null)
-          ])
-          : [null, null];
-        setPlatformAccount(account);
-        setPlatformMessage(message);
+          ]).then(([account, message]) => {
+            setPlatformAccount(account);
+            setPlatformMessage(message);
+          });
+        } else {
+          setPlatformAccount(null);
+          setPlatformMessage(null);
+        }
         return;
       }
 
