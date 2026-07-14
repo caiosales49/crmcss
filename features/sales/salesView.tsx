@@ -13,6 +13,7 @@ import { BarcodeScanner } from "@/features/products/barcodeScanner";
 import { useAuth } from "@/contexts/authProvider";
 import { useStore } from "@/contexts/storeProvider";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { formatCurrencyInput, parseCurrencyInput } from "@/lib/currencyInput";
 import { formatCurrency } from "@/lib/format";
 import { ProductService } from "@/services/productService";
 import { SaleService } from "@/services/saleService";
@@ -20,7 +21,7 @@ import type { PaymentMethod, SaleItem } from "@/types/sale";
 
 export function SalesView() {
   const { companyId, user } = useAuth();
-  const { activeStoreId } = useStore();
+  const { activeStore, activeStoreId } = useStore();
   const client = useQueryClient();
   const [term, setTerm] = useState("");
   const debouncedTerm = useDebouncedValue(term, 250);
@@ -87,9 +88,10 @@ export function SalesView() {
 
   const finalize = useMutation({
     mutationFn: () => {
-      if (!companyId || !activeStoreId || !user) throw new Error("Sessão inválida.");
+      const saleCompanyId = companyId ?? activeStore?.companyId;
+      if (!saleCompanyId || !activeStoreId || !user) throw new Error("Sessão inválida. Aguarde a loja carregar e tente novamente.");
       return SaleService.finalize({
-        companyId,
+        companyId: saleCompanyId,
         storeId: activeStoreId,
         createdBy: user.uid,
         updatedBy: user.uid,
@@ -183,11 +185,10 @@ export function SalesView() {
             <label className="grid gap-1.5 text-sm font-medium text-foreground">
               <span>Desconto da venda</span>
               <Input
-                type="number"
-                step="0.01"
-                placeholder="0,00"
-                value={discount || ""}
-                onChange={(event) => setDiscount(Number(event.target.value))}
+                inputMode="numeric"
+                placeholder="Valor"
+                value={formatCurrencyInput(discount)}
+                onChange={(event) => setDiscount(parseCurrencyInput(event.target.value))}
               />
             </label>
             <Select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}>
@@ -208,8 +209,13 @@ export function SalesView() {
               onClick={() => finalize.mutate()}
             >
               <CreditCard className="h-4 w-4" />
-              Finalizar venda
+              {finalize.isPending ? "Finalizando..." : "Finalizar venda"}
             </Button>
+            {finalize.isError && (
+              <p className="text-sm text-destructive">
+                {finalize.error instanceof Error ? finalize.error.message : "Não foi possível finalizar a venda."}
+              </p>
+            )}
           </CardContent>
         </Card>
       </section>

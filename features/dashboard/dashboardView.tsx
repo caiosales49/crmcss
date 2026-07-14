@@ -79,6 +79,13 @@ export function DashboardView() {
   const metrics = query.data?.metrics;
   const isWaitingForData = query.isLoading;
   const formatMetric = (value: string) => (isWaitingForData ? "Carregando..." : value);
+  const isCustomPeriod = periodPreset === "custom";
+  const dateInputClassName = cn(
+    "min-w-0 max-w-full appearance-none px-4 text-left transition",
+    isCustomPeriod
+      ? "border-primary bg-primary/5 text-foreground shadow-[0_0_0_3px_hsl(var(--primary)/0.10)]"
+      : "cursor-not-allowed border-border bg-muted/60 text-muted-foreground opacity-75"
+  );
   const cards = [
     { label: "Vendido no período", value: formatMetric(formatCurrency(metrics?.soldInPeriod ?? 0)) },
     { label: "Vendas no período", value: formatMetric(numberFormatter.format(metrics?.salesCount ?? 0)) },
@@ -107,17 +114,17 @@ export function DashboardView() {
             <option value="custom">Personalizado</option>
           </Select>
           <Input
-            className="min-w-0 max-w-full appearance-none px-4 text-left"
+            className={dateInputClassName}
             type="date"
-            value={periodPreset === "custom" ? customStartDate : formatDateInput(selectedPeriod.startDate)}
-            disabled={periodPreset !== "custom"}
+            value={isCustomPeriod ? customStartDate : formatDateInput(selectedPeriod.startDate)}
+            disabled={!isCustomPeriod}
             onChange={(event) => setCustomStartDate(event.target.value)}
           />
           <Input
-            className="min-w-0 max-w-full appearance-none px-4 text-left"
+            className={dateInputClassName}
             type="date"
-            value={periodPreset === "custom" ? customEndDate : formatDateInput(selectedPeriod.endDate)}
-            disabled={periodPreset !== "custom"}
+            value={isCustomPeriod ? customEndDate : formatDateInput(selectedPeriod.endDate)}
+            disabled={!isCustomPeriod}
             onChange={(event) => setCustomEndDate(event.target.value)}
           />
         </div>

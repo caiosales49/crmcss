@@ -41,9 +41,14 @@ export const SaleService = {
     const saleRef = doc(collection(firestore, "sales"));
 
     await runTransaction(firestore, async (transaction) => {
-      for (const item of input.items) {
+      const productSnapshots = await Promise.all(input.items.map(async (item) => {
         const productRef = doc(firestore, "products", item.productId);
         const productSnapshot = await transaction.get(productRef);
+        return { item, productRef, productSnapshot };
+      }));
+
+      const historicalItems = [];
+      for (const { item, productRef, productSnapshot } of productSnapshots) {
         if (!productSnapshot.exists()) {
           throw new Error(`Produto ${item.name} não encontrado.`);
         }
@@ -60,6 +65,23 @@ export const SaleService = {
           quantity: increment(-item.quantity),
           updatedAt: serverTimestamp(),
           updatedBy: input.createdBy
+        });
+
+        const quantity = Number(item.quantity);
+        const unitPrice = Number(item.unitPrice);
+        const discount = Number(item.discount ?? 0);
+        const costPrice = Number(product.costPrice ?? 0);
+        historicalItems.push({
+          ...item,
+          name: product.name,
+          sku: product.sku,
+          barcode: product.barcode,
+          quantity,
+          unitPrice,
+          costPrice,
+          discount,
+          subtotal: quantity * unitPrice,
+          total: Math.max(quantity * unitPrice - discount, 0)
         });
 
         const movementRef = doc(collection(firestore, "inventoryMovements"));
@@ -83,6 +105,11 @@ export const SaleService = {
 
       transaction.set(saleRef, {
         ...input,
+        items: historicalItems,
+        grossProfit: historicalItems.reduce(
+          (sum, item) => sum + (item.unitPrice - item.costPrice) * item.quantity - item.discount,
+          0
+        ) - Number(input.discount ?? 0),
         status: "paid",
         paidAt: serverTimestamp(),
         createdAt: serverTimestamp(),

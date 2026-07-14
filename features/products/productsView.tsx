@@ -18,6 +18,7 @@ import { useAuth } from "@/contexts/authProvider";
 import { useStore } from "@/contexts/storeProvider";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { cn } from "@/lib/cn";
+import { formatCurrencyInput, parseCurrencyInput } from "@/lib/currencyInput";
 import { formatCurrency, formatPercent, formatStatus } from "@/lib/format";
 import { ProductService } from "@/services/productService";
 import { calculateMargin, productSchema, type ProductFormValues } from "@/validators/productSchema";
@@ -213,10 +214,30 @@ export function ProductsView() {
               </Field>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Preço de custo">
-                  <Input type="number" step="0.01" placeholder="0,00" {...form.register("costPrice")} />
+                  <Input
+                    inputMode="numeric"
+                    placeholder="Preço de custo"
+                    value={formatCurrencyInput(Number(costPrice))}
+                    onChange={(event) => {
+                      form.setValue("costPrice", parseCurrencyInput(event.target.value), {
+                        shouldDirty: true,
+                        shouldValidate: true
+                      });
+                    }}
+                  />
                 </Field>
                 <Field label="Preço de venda">
-                  <Input type="number" step="0.01" placeholder="0,00" {...form.register("salePrice")} />
+                  <Input
+                    inputMode="numeric"
+                    placeholder="Preço de venda"
+                    value={formatCurrencyInput(Number(salePrice))}
+                    onChange={(event) => {
+                      form.setValue("salePrice", parseCurrencyInput(event.target.value), {
+                        shouldDirty: true,
+                        shouldValidate: true
+                      });
+                    }}
+                  />
                 </Field>
               </div>
               <div className="grid gap-3 sm:grid-cols-3">

@@ -290,8 +290,8 @@ service cloud.firestore {
 
     match /financialTransactions/{documentId} {
       allow read: if validStoreReadUpdateDelete();
-      allow create: if validStoreCreate();
-      allow update, delete: if validStoreReadUpdateDelete();
+      allow create: if validStoreCreate() && canManageStore(request.resource.data.storeId);
+      allow update, delete: if canManageStore(resource.data.storeId) && storePlatformAccountActive(resource.data.storeId);
     }
 
     match /reports/{documentId} {
