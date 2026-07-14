@@ -94,8 +94,12 @@ export function DashboardView() {
         title="Dashboard"
         description="Visão executiva de vendas, estoque, financeiro e alertas."
       >
-        <div className="grid w-full gap-2 sm:w-auto sm:min-w-[460px] sm:grid-cols-[180px_1fr_1fr]">
-          <Select value={periodPreset} onChange={(event) => setPeriodPreset(event.target.value as PeriodPreset)}>
+        <div className="grid w-full min-w-0 grid-cols-1 gap-2 sm:w-auto sm:min-w-[460px] sm:grid-cols-[180px_minmax(0,1fr)_minmax(0,1fr)]">
+          <Select
+            className="min-w-0"
+            value={periodPreset}
+            onChange={(event) => setPeriodPreset(event.target.value as PeriodPreset)}
+          >
             <option value="today">Hoje</option>
             <option value="last7">Últimos 7 dias</option>
             <option value="last30">Últimos 30 dias</option>
@@ -103,12 +107,14 @@ export function DashboardView() {
             <option value="custom">Personalizado</option>
           </Select>
           <Input
+            className="min-w-0"
             type="date"
             value={periodPreset === "custom" ? customStartDate : formatDateInput(selectedPeriod.startDate)}
             disabled={periodPreset !== "custom"}
             onChange={(event) => setCustomStartDate(event.target.value)}
           />
           <Input
+            className="min-w-0"
             type="date"
             value={periodPreset === "custom" ? customEndDate : formatDateInput(selectedPeriod.endDate)}
             disabled={periodPreset !== "custom"}
