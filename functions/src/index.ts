@@ -26,6 +26,7 @@ export const onLowStockMovement = onDocumentCreated(
 
     await db.collection("notifications").add({
       companyId: product.companyId,
+      storeId: product.storeId,
       type: "low_stock",
       title: "Estoque baixo",
       description: `${product.name} chegou ao estoque mínimo.`,

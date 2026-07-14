@@ -11,12 +11,40 @@ function repository() {
 }
 
 export const FinanceService = {
-  list(companyId: string) {
-    return repository().listByCompany(companyId, [orderBy("dueAt", "desc"), limit(100)]);
+  list(storeId: string) {
+    return repository().listByStore(storeId, [orderBy("dueAt", "desc"), limit(100)]);
   },
 
-  listByType(companyId: string, type: FinancialTransaction["type"]) {
-    return repository().listByCompany(companyId, [
+  async listPaidInPeriod(storeId: string, startDate: Date, endDate: Date) {
+    const [byPaidAt, byDueAt] = await Promise.all([
+      repository().listByStore(storeId, [
+        where("status", "==", "paid"),
+        where("paidAt", ">=", startDate),
+        where("paidAt", "<=", endDate),
+        orderBy("paidAt", "desc"),
+        limit(500)
+      ]),
+      repository().listByStore(storeId, [
+        where("status", "==", "paid"),
+        where("dueAt", ">=", startDate),
+        where("dueAt", "<=", endDate),
+        orderBy("dueAt", "desc"),
+        limit(500)
+      ])
+    ]);
+    const transactions = new Map<string, FinancialTransaction>();
+    for (const item of [...byPaidAt, ...byDueAt]) {
+      const date = item.paidAt ?? item.dueAt;
+      const time = date.toMillis();
+      if (time >= startDate.getTime() && time <= endDate.getTime()) {
+        transactions.set(item.id, item);
+      }
+    }
+    return Array.from(transactions.values());
+  },
+
+  listByType(storeId: string, type: FinancialTransaction["type"]) {
+    return repository().listByStore(storeId, [
       where("type", "==", type),
       orderBy("dueAt", "desc"),
       limit(100)

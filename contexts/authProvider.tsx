@@ -12,7 +12,6 @@ import {
 } from "react";
 import type { User } from "firebase/auth";
 import { AuthService } from "@/services/authService";
-import { SubscriptionService } from "@/services/subscriptionService";
 import type { UserProfile } from "@/types/company";
 import type { Subscription } from "@/types/subscription";
 
@@ -25,27 +24,14 @@ interface AuthContextValue {
   companyId?: string;
   loading: boolean;
   signIn: () => Promise<void>;
+  signInWithEmail: (email: string, password: string) => Promise<void>;
+  createAccountWithEmail: (input: { name: string; email: string; password: string }) => Promise<void>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-interface CachedAuthSnapshot {
-  profile: UserProfile | null;
-  subscription: Subscription | null;
-}
-
-function readCachedAuth() {
-  if (typeof window === "undefined") return null;
-  try {
-    const cached = window.localStorage.getItem(cachedAuthKey);
-    return cached ? (JSON.parse(cached) as CachedAuthSnapshot) : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeCachedAuth(snapshot: CachedAuthSnapshot) {
+function writeCachedAuth(snapshot: { profile: UserProfile | null; subscription: Subscription | null }) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(cachedAuthKey, JSON.stringify(snapshot));
@@ -70,43 +56,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const cached = readCachedAuth();
-    if (!cached) return;
-    setProfile(cached.profile);
-    setSubscription(cached.subscription);
-    if (cached.profile) {
-      setLoading(false);
-    }
-  }, []);
-
   const hydrateProfile = useCallback(async (currentUser: User | null) => {
+    setLoading(true);
+    setUser(currentUser);
+    if (!currentUser) {
+      setProfile(null);
+      setSubscription(null);
+      clearCachedAuth();
+      setLoading(false);
+      return;
+    }
+
+    // A sessao do Firebase ja e suficiente para abrir a aplicacao. O perfil
+    // pode ser sincronizado em segundo plano sem travar o login no mobile.
+    setLoading(false);
     try {
-      setUser(currentUser);
-      if (!currentUser) {
-        setProfile(null);
-        setSubscription(null);
-        clearCachedAuth();
-        return;
-      }
-
-      let nextProfile = await AuthService.getProfile(currentUser.uid);
-      if (!nextProfile) {
-        await AuthService.ensureTenant(currentUser);
-        nextProfile = await AuthService.getProfile(currentUser.uid);
-      }
-
+      const nextProfile = await AuthService.upsertGoogleProfile(currentUser);
       setProfile(nextProfile);
-      let nextSubscription: Subscription | null = null;
-      if (nextProfile) {
-        nextSubscription = await SubscriptionService.getByCompany(nextProfile.companyId);
-      }
-      setSubscription(nextSubscription);
-      writeCachedAuth({ profile: nextProfile, subscription: nextSubscription });
+      setSubscription(null);
+      writeCachedAuth({ profile: nextProfile, subscription: null });
     } catch (error) {
       console.error("Falha ao atualizar sessão", error);
-    } finally {
-      setLoading(false);
     }
   }, []);
 
@@ -130,10 +100,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       companyId: profile?.companyId,
       loading,
       signIn: async () => {
-        const signedUser = await AuthService.signInWithGoogle();
-        setUser(signedUser);
-        await hydrateProfile(signedUser);
+        await AuthService.signInWithGoogle();
         router.push("/dashboard");
+      },
+      signInWithEmail: async (email: string, password: string) => {
+        await AuthService.signInWithEmail(email, password);
+        router.push("/dashboard");
+      },
+      createAccountWithEmail: async (input: { name: string; email: string; password: string }) => {
+        await AuthService.createAccountWithEmail(input);
+        router.push("/create-store");
       },
       logout: async () => {
         await AuthService.logout();

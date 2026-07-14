@@ -15,22 +15,14 @@ export interface DashboardPeriod {
 }
 
 export const DashboardService = {
-  async getOverview(companyId: string, period: DashboardPeriod): Promise<DashboardData> {
-    const [products, customers, sales, transactions] = await Promise.all([
-      ProductService.list(companyId),
-      CustomerService.list(companyId),
-      SaleService.list(companyId),
-      FinanceService.list(companyId)
+  async getOverview(storeId: string, period: DashboardPeriod): Promise<DashboardData> {
+    const [products, customers, paidSales, paidTransactions] = await Promise.all([
+      ProductService.list(storeId),
+      CustomerService.list(storeId),
+      SaleService.listPaidInPeriod(storeId, period.startDate, period.endDate),
+      FinanceService.listPaidInPeriod(storeId, period.startDate, period.endDate)
     ]);
 
-    const paidSales = sales.filter(
-      (sale) => sale.status === "paid" && isTimestampInPeriod(sale.createdAt, period)
-    );
-    const paidTransactions = transactions.filter(
-      (item) =>
-        item.status === "paid" &&
-        isTimestampInPeriod(item.paidAt ?? item.dueAt, period)
-    );
     const expenses = paidTransactions
       .filter((item) => item.type === "expense")
       .reduce((sum, item) => sum + item.amount, 0);
@@ -75,11 +67,6 @@ function toNumber(value: unknown) {
 
 function isLowStock(quantity: unknown, minimumStock: unknown) {
   return toNumber(quantity) <= toNumber(minimumStock);
-}
-
-function isTimestampInPeriod(timestamp: Sale["createdAt"], period: DashboardPeriod) {
-  const time = timestamp.toMillis();
-  return time >= period.startDate.getTime() && time <= period.endDate.getTime();
 }
 
 function buildPeriodChart(

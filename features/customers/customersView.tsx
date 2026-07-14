@@ -1,8 +1,11 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { UserPlus } from "lucide-react";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { InfiniteData } from "@tanstack/react-query";
+import type { DocumentData, QueryDocumentSnapshot } from "firebase/firestore";
+import { Search, UserPlus } from "lucide-react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { PageHeader } from "@/components/layout/pageHeader";
 import { Badge } from "@/components/ui/badge";
@@ -12,8 +15,12 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/contexts/authProvider";
-import { formatCurrency } from "@/lib/format";
+import { useStore } from "@/contexts/storeProvider";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { formatCurrency, formatStatus } from "@/lib/format";
 import { CustomerService } from "@/services/customerService";
+import type { FirestorePage } from "@/services/firestoreRepository";
+import type { Customer } from "@/types/customer";
 import { customerSchema, type CustomerFormValues } from "@/validators/customerSchema";
 
 const defaultValues: CustomerFormValues = {
@@ -31,19 +38,32 @@ const defaultValues: CustomerFormValues = {
 
 export function CustomersView() {
   const { companyId, user } = useAuth();
+  const { activeStoreId } = useStore();
   const client = useQueryClient();
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search);
   const form = useForm<CustomerFormValues>({ resolver: zodResolver(customerSchema), defaultValues });
-  const customers = useQuery({
-    queryKey: ["customers", companyId],
-    queryFn: () => CustomerService.list(companyId ?? ""),
-    enabled: Boolean(companyId)
+  const customers = useInfiniteQuery<
+    FirestorePage<Customer>,
+    Error,
+    InfiniteData<FirestorePage<Customer>>,
+    [string, string | undefined, string],
+    QueryDocumentSnapshot<DocumentData> | null
+  >({
+    queryKey: ["customers", activeStoreId, debouncedSearch],
+    queryFn: ({ pageParam }) => CustomerService.searchPage(activeStoreId ?? "", debouncedSearch, pageParam),
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    initialPageParam: null,
+    enabled: Boolean(activeStoreId)
   });
+  const customerItems = customers.data?.pages.flatMap((page) => page.items) ?? [];
 
   const create = useMutation({
     mutationFn: (values: CustomerFormValues) => {
-      if (!companyId || !user) throw new Error("Sessão inválida.");
+      if (!companyId || !activeStoreId || !user) throw new Error("Sessão inválida.");
       return CustomerService.create({
         companyId,
+        storeId: activeStoreId,
         createdBy: user.uid,
         updatedBy: user.uid,
         name: values.name,
@@ -101,11 +121,17 @@ export function CustomersView() {
         </Card>
         <Card className="min-w-0">
           <CardHeader>
-            <CardTitle>Base de clientes</CardTitle>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <CardTitle>Base de clientes</CardTitle>
+              <div className="relative w-full sm:max-w-xs">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input className="pl-9" placeholder="Pesquisar cliente" value={search} onChange={(event) => setSearch(event.target.value)} />
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="grid gap-3 md:hidden">
-              {(customers.data ?? []).map((customer) => (
+              {customerItems.map((customer) => (
                 <div key={customer.id} className="rounded-md border border-border p-3 text-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -114,7 +140,7 @@ export function CustomersView() {
                         {customer.whatsapp || customer.phone || customer.email || "Sem contato"}
                       </p>
                     </div>
-                    <Badge tone={customer.status === "active" ? "success" : "neutral"}>{customer.status}</Badge>
+                    <Badge tone={customer.status === "active" ? "success" : "neutral"}>{formatStatus(customer.status)}</Badge>
                   </div>
                   <div className="mt-3 grid gap-2 text-muted-foreground">
                     <p>Cidade: <span className="font-medium text-foreground">{customer.address?.city || "-"}</span></p>
@@ -135,18 +161,29 @@ export function CustomersView() {
                 </tr>
               </thead>
               <tbody>
-                {(customers.data ?? []).map((customer) => (
+                {customerItems.map((customer) => (
                   <tr key={customer.id} className="border-t border-border">
                     <td className="py-3 font-medium">{customer.name}</td>
                     <td>{customer.whatsapp || customer.phone || customer.email}</td>
                     <td>{customer.address?.city}</td>
                     <td>{formatCurrency(customer.totalSpent)}</td>
-                    <td><Badge tone={customer.status === "active" ? "success" : "neutral"}>{customer.status}</Badge></td>
+                    <td><Badge tone={customer.status === "active" ? "success" : "neutral"}>{formatStatus(customer.status)}</Badge></td>
                   </tr>
                 ))}
               </tbody>
             </table>
             </div>
+            {customers.hasNextPage && (
+              <div className="mt-4 flex justify-center">
+                <Button
+                  variant="secondary"
+                  disabled={customers.isFetchingNextPage}
+                  onClick={() => void customers.fetchNextPage()}
+                >
+                  {customers.isFetchingNextPage ? "Carregando..." : "Carregar mais"}
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       </section>

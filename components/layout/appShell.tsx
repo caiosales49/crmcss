@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   BarChart3,
   Boxes,
@@ -17,8 +18,10 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { StoreSwitcher } from "@/components/layout/storeSwitcher";
 import { useAuth } from "@/contexts/authProvider";
 import { cn } from "@/lib/cn";
+import { formatRole } from "@/lib/format";
 
 const navigation = [
   { href: "/dashboard", label: "Dashboard", icon: Home },
@@ -34,6 +37,15 @@ const navigation = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { profile, logout } = useAuth();
+  const [navigating, setNavigating] = useState(false);
+
+  useEffect(() => {
+    setNavigating(false);
+  }, [pathname]);
+
+  function handleNavigationClick(href: string) {
+    if (href !== pathname) setNavigating(true);
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -56,6 +68,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={() => handleNavigationClick(item.href)}
                 className={cn(
                   "flex h-10 items-center gap-3 rounded-md px-3 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground",
                   active && "bg-muted text-foreground"
@@ -72,7 +85,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="lg:pl-64">
         <header className="sticky top-0 z-20 border-b border-border bg-background/95 backdrop-blur">
           <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
-            <div className="relative flex-1">
+            <StoreSwitcher />
+            <div className="relative hidden min-w-0 flex-1 md:block">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 className="pl-9"
@@ -82,7 +96,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
             <div className="hidden text-right sm:block">
               <p className="text-sm font-medium">{profile?.displayName ?? "Usuário"}</p>
-              <p className="text-xs text-muted-foreground">{profile?.role ?? "owner"}</p>
+              <p className="text-xs text-muted-foreground">{formatRole(profile?.role ?? "owner")}</p>
             </div>
             <Button variant="ghost" aria-label="Sair" onClick={() => void logout()}>
               <LogOut className="h-4 w-4" />
@@ -96,6 +110,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Link
                   key={item.href}
                   href={item.href}
+                  onClick={() => handleNavigationClick(item.href)}
                   className={cn(
                     "flex min-w-20 flex-col items-center gap-1 rounded-md px-2 py-2 text-xs text-muted-foreground",
                     active && "bg-muted text-foreground"
@@ -108,7 +123,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             })}
           </nav>
         </header>
-        <main className="px-4 py-6 sm:px-6">{children}</main>
+        <main className="min-w-0 overflow-x-hidden px-4 py-6 sm:px-6">{children}</main>
+      </div>
+      {navigating && <NavigationOverlay />}
+    </div>
+  );
+}
+
+function NavigationOverlay() {
+  return (
+    <div className="pointer-events-none fixed inset-0 z-50 flex items-start justify-end bg-background/10 p-4 backdrop-blur-[1px]">
+      <div className="mt-2 flex h-9 w-9 items-center justify-center rounded-full border border-border bg-card/80 shadow-soft">
+        <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
       </div>
     </div>
   );

@@ -7,7 +7,8 @@ import {
   orderBy,
   limit,
   runTransaction,
-  serverTimestamp
+  serverTimestamp,
+  where
 } from "firebase/firestore";
 import { db } from "@/firebase/client";
 import { FirestoreRepository } from "@/services/firestoreRepository";
@@ -20,8 +21,18 @@ function repository() {
 }
 
 export const SaleService = {
-  list(companyId: string) {
-    return repository().listByCompany(companyId, [orderBy("createdAt", "desc"), limit(100)]);
+  list(storeId: string) {
+    return repository().listByStore(storeId, [orderBy("createdAt", "desc"), limit(100)]);
+  },
+
+  listPaidInPeriod(storeId: string, startDate: Date, endDate: Date) {
+    return repository().listByStore(storeId, [
+      where("status", "==", "paid"),
+      where("createdAt", ">=", startDate),
+      where("createdAt", "<=", endDate),
+      orderBy("createdAt", "desc"),
+      limit(500)
+    ]);
   },
 
   async finalize(input: Omit<Sale, "id" | "createdAt" | "updatedAt">) {
@@ -38,8 +49,8 @@ export const SaleService = {
         }
 
         const product = productSnapshot.data() as Product;
-        if (product.companyId !== input.companyId) {
-          throw new Error("Produto pertence a outra empresa.");
+        if (product.companyId !== input.companyId || product.storeId !== input.storeId) {
+          throw new Error("Produto pertence a outra loja.");
         }
         if (product.quantity < item.quantity) {
           throw new Error(`Estoque insuficiente para ${item.name}.`);
@@ -54,6 +65,7 @@ export const SaleService = {
         const movementRef = doc(collection(firestore, "inventoryMovements"));
         transaction.set(movementRef, {
           companyId: input.companyId,
+          storeId: input.storeId,
           productId: item.productId,
           productName: item.name,
           type: "out",

@@ -7,6 +7,7 @@ export type ThemePreference = "light" | "dark" | "system";
 export interface TenantEntity {
   id: string;
   companyId: string;
+  storeId: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   createdBy: string;

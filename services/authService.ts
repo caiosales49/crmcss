@@ -1,30 +1,28 @@
 "use client";
 
 import {
+  createUserWithEmailAndPassword,
   onAuthStateChanged,
+  signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
+  updateProfile,
   type Auth,
   type User
 } from "firebase/auth";
 import {
+  collection,
   doc,
   getDoc,
+  getDocs,
+  query,
   serverTimestamp,
   setDoc,
-  writeBatch,
+  where,
   type Firestore
 } from "firebase/firestore";
 import { auth, db, googleProvider } from "@/firebase/client";
-import type { Company, UserProfile } from "@/types/company";
-import type { Subscription } from "@/types/subscription";
-
-const trialLimits = {
-  users: 1,
-  products: 500,
-  monthlySales: 1000,
-  premiumModules: []
-};
+import type { UserProfile } from "@/types/company";
 
 function assertFirebaseReady() {
   if (!auth || !db) {
@@ -35,6 +33,42 @@ function assertFirebaseReady() {
 function firebaseClients(): { auth: Auth; db: Firestore } {
   assertFirebaseReady();
   return { auth: auth as Auth, db: db as Firestore };
+}
+
+function normalizeEmail(email?: string | null) {
+  return (email ?? "").trim().toLowerCase();
+}
+
+async function findActiveMemberByEmail(clients: { db: Firestore }, email: string) {
+  const snapshot = await getDocs(
+    query(
+      collection(clients.db, "storeMembers"),
+      where("email", "==", email),
+      where("status", "==", "active")
+    )
+  );
+  return snapshot.docs[0]?.data() ?? null;
+}
+
+async function findPendingInvitationByEmail(clients: { db: Firestore }, email: string) {
+  const invitationSnapshot = await getDocs(
+    query(
+      collection(clients.db, "invitations"),
+      where("email", "==", email),
+      where("status", "==", "pending")
+    )
+  );
+  const invitation = invitationSnapshot.docs.find((item) => Boolean(item.data().companyId))?.data();
+  if (invitation) return invitation;
+
+  const memberSnapshot = await getDocs(
+    query(
+      collection(clients.db, "storeMembers"),
+      where("email", "==", email),
+      where("status", "==", "pending")
+    )
+  );
+  return memberSnapshot.docs.find((item) => Boolean(item.data().companyId))?.data() ?? null;
 }
 
 export const AuthService = {
@@ -49,6 +83,23 @@ export const AuthService = {
     return credential.user;
   },
 
+  async signInWithEmail(email: string, password: string) {
+    const clients = firebaseClients();
+    const credential = await signInWithEmailAndPassword(clients.auth, normalizeEmail(email), password);
+    return credential.user;
+  },
+
+  async createAccountWithEmail(input: { name: string; email: string; password: string }) {
+    const clients = firebaseClients();
+    const credential = await createUserWithEmailAndPassword(
+      clients.auth,
+      normalizeEmail(input.email),
+      input.password
+    );
+    await updateProfile(credential.user, { displayName: input.name.trim() });
+    return credential.user;
+  },
+
   async logout() {
     const clients = firebaseClients();
     await signOut(clients.auth);
@@ -60,62 +111,46 @@ export const AuthService = {
     return snapshot.exists() ? ({ id: snapshot.id, ...snapshot.data() } as UserProfile) : null;
   },
 
-  async ensureTenant(user: User) {
+  async upsertGoogleProfile(user: User) {
     const clients = firebaseClients();
     const userRef = doc(clients.db, "users", user.uid);
-    const userSnapshot = await getDoc(userRef);
+    const existing = await getDoc(userRef);
+    const current = existing.exists() ? existing.data() : {};
+    const email = normalizeEmail(user.email);
+    const activeMember = await findActiveMemberByEmail(clients, email);
+    const pendingInvitation = activeMember ? null : await findPendingInvitationByEmail(clients, email);
+    const shouldUseMemberProfile = Boolean(activeMember)
+      && (!existing.exists() || current.companyId === user.uid || current.role !== "owner");
+    const shouldUsePendingProfile = Boolean(pendingInvitation)
+      && (!existing.exists() || current.companyId === user.uid || current.role !== "owner");
 
-    if (userSnapshot.exists()) return;
-
-    const companyRef = doc(clients.db, "companies", user.uid);
-    const subscriptionRef = doc(clients.db, "subscriptions", user.uid);
-    const batch = writeBatch(clients.db);
-
-    const company: Omit<Company, "createdAt" | "updatedAt"> = {
-      id: companyRef.id,
-      name: user.displayName ? `Empresa de ${user.displayName}` : "Minha empresa",
-      ownerId: user.uid,
-      currency: "BRL",
-      theme: "system",
-      lowStockAlertsEnabled: true
-    };
-
-    const profile: Omit<UserProfile, "createdAt" | "updatedAt"> = {
+    await setDoc(userRef, {
       id: user.uid,
-      companyId: companyRef.id,
-      displayName: user.displayName ?? "Usuário",
-      email: user.email ?? "",
-      photoURL: user.photoURL ?? undefined,
-      role: "owner",
-      active: true
-    };
-
-    const subscription: Omit<Subscription, "createdAt" | "updatedAt"> = {
-      id: subscriptionRef.id,
-      companyId: companyRef.id,
-      status: "trialing",
-      plan: "trial",
-      trial: true,
-      limits: trialLimits,
-      paymentProvider: "manual"
-    };
-
-    batch.set(companyRef, {
-      ...company,
-      createdAt: serverTimestamp(),
+      email,
+      name: user.displayName ?? current.name ?? "Usuário",
+      displayName: user.displayName ?? current.displayName ?? "Usuário",
+      photoURL: user.photoURL ?? current.photoURL ?? null,
+      companyId: shouldUseMemberProfile
+        ? activeMember?.companyId
+        : shouldUsePendingProfile
+          ? pendingInvitation?.companyId
+          : current.companyId ?? user.uid,
+      role: shouldUseMemberProfile
+        ? activeMember?.role
+        : shouldUsePendingProfile
+          ? pendingInvitation?.role
+          : current.role ?? "owner",
+      active: current.active ?? true,
+      lastActiveStoreId: shouldUseMemberProfile
+        ? activeMember?.storeId
+        : shouldUsePendingProfile
+          ? pendingInvitation?.storeId
+          : current.lastActiveStoreId ?? null,
+      createdAt: current.createdAt ?? serverTimestamp(),
       updatedAt: serverTimestamp()
-    });
-    batch.set(userRef, {
-      ...profile,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
-    batch.set(subscriptionRef, {
-      ...subscription,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
+    }, { merge: true });
 
-    await batch.commit();
+    const snapshot = await getDoc(userRef);
+    return { id: snapshot.id, ...snapshot.data() } as UserProfile;
   }
 };

@@ -25,10 +25,11 @@ export interface Company {
 export interface UserProfile {
   id: string;
   companyId: string;
+  lastActiveStoreId?: string | null;
   displayName: string;
   email: string;
   photoURL?: string;
-  role: "owner" | "admin" | "seller" | "viewer";
+  role: "owner" | "manager" | "employee" | "admin" | "seller" | "viewer";
   active: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;

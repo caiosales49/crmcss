@@ -11,8 +11,8 @@ function repository() {
 }
 
 export const InventoryService = {
-  listMovements(companyId: string) {
-    return repository().listByCompany(companyId, [orderBy("createdAt", "desc"), limit(100)]);
+  listMovements(storeId: string) {
+    return repository().listByStore(storeId, [orderBy("createdAt", "desc"), limit(100)]);
   },
 
   createMovement(input: Omit<InventoryMovement, "id" | "createdAt" | "updatedAt">) {

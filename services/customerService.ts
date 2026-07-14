@@ -1,6 +1,6 @@
 "use client";
 
-import { limit, orderBy, where } from "firebase/firestore";
+import { limit, orderBy, where, type DocumentData, type QueryDocumentSnapshot } from "firebase/firestore";
 import { db } from "@/firebase/client";
 import { FirestoreRepository } from "@/services/firestoreRepository";
 import type { Customer } from "@/types/customer";
@@ -11,18 +11,32 @@ function repository() {
 }
 
 export const CustomerService = {
-  list(companyId: string) {
-    return repository().listByCompany(companyId, [orderBy("name", "asc"), limit(100)]);
+  list(storeId: string) {
+    return repository().listByStore(storeId, [orderBy("name", "asc"), limit(100)]);
   },
 
-  search(companyId: string, term: string) {
+  listPage(storeId: string, cursor?: QueryDocumentSnapshot<DocumentData> | null) {
+    return repository().pageByStore(storeId, [orderBy("name", "asc")], 25, cursor);
+  },
+
+  search(storeId: string, term: string) {
     const normalized = term.trim();
-    if (!normalized) return this.list(companyId);
-    return repository().listByCompany(companyId, [
+    if (!normalized) return this.list(storeId);
+    return repository().listByStore(storeId, [
       where("name", ">=", normalized),
       where("name", "<=", `${normalized}\uf8ff`),
       limit(25)
     ]);
+  },
+
+  searchPage(storeId: string, term: string, cursor?: QueryDocumentSnapshot<DocumentData> | null) {
+    const normalized = term.trim();
+    if (!normalized) return this.listPage(storeId, cursor);
+    return repository().pageByStore(storeId, [
+      orderBy("name", "asc"),
+      where("name", ">=", normalized),
+      where("name", "<=", `${normalized}\uf8ff`)
+    ], 25, cursor);
   },
 
   create(input: Omit<Customer, "id" | "createdAt" | "updatedAt">) {

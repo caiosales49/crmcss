@@ -11,9 +11,10 @@ function repository() {
 }
 
 export const ReportService = {
-  request(companyId: string, createdBy: string, type: ReportType, format: ExportFormat) {
+  request(companyId: string, storeId: string, createdBy: string, type: ReportType, format: ExportFormat) {
     return repository().create({
       companyId,
+      storeId,
       createdBy,
       updatedBy: createdBy,
       type,
@@ -23,7 +24,7 @@ export const ReportService = {
     });
   },
 
-  list(companyId: string) {
-    return repository().listRecent(companyId, "requestedAt", 50);
+  list(storeId: string) {
+    return repository().listRecentByStore(storeId, "requestedAt", 50);
   }
 };

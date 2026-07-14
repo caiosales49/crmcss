@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { BarcodeScanner } from "@/features/products/barcodeScanner";
 import { useAuth } from "@/contexts/authProvider";
+import { useStore } from "@/contexts/storeProvider";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { formatCurrency } from "@/lib/format";
 import { ProductService } from "@/services/productService";
 import { SaleService } from "@/services/saleService";
@@ -18,16 +20,18 @@ import type { PaymentMethod, SaleItem } from "@/types/sale";
 
 export function SalesView() {
   const { companyId, user } = useAuth();
+  const { activeStoreId } = useStore();
   const client = useQueryClient();
   const [term, setTerm] = useState("");
+  const debouncedTerm = useDebouncedValue(term, 250);
   const [discount, setDiscount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("pix");
   const [cart, setCart] = useState<SaleItem[]>([]);
 
   const products = useQuery({
-    queryKey: ["pos-products", companyId, term],
-    queryFn: () => ProductService.search(companyId ?? "", term),
-    enabled: Boolean(companyId)
+    queryKey: ["pos-products", activeStoreId, debouncedTerm],
+    queryFn: () => ProductService.search(activeStoreId ?? "", debouncedTerm),
+    enabled: Boolean(activeStoreId)
   });
 
   const addProduct = useCallback((product: NonNullable<typeof products.data>[number]) => {
@@ -64,11 +68,11 @@ export function SalesView() {
   }, []);
 
   const onBarcode = useCallback(async (code: string) => {
-    if (!companyId) return;
-    const product = await ProductService.findByBarcode(companyId, code);
+    if (!activeStoreId) return;
+    const product = await ProductService.findByBarcode(activeStoreId, code);
     if (product) addProduct(product);
     setTerm("");
-  }, [addProduct, companyId]);
+  }, [activeStoreId, addProduct]);
 
   const totals = useMemo(() => {
     const subtotal = cart.reduce((sum, item) => sum + item.subtotal, 0);
@@ -83,9 +87,10 @@ export function SalesView() {
 
   const finalize = useMutation({
     mutationFn: () => {
-      if (!companyId || !user) throw new Error("Sessão inválida.");
+      if (!companyId || !activeStoreId || !user) throw new Error("Sessão inválida.");
       return SaleService.finalize({
         companyId,
+        storeId: activeStoreId,
         createdBy: user.uid,
         updatedBy: user.uid,
         code: `PDV-${Date.now()}`,

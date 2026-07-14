@@ -1,47 +1,102 @@
-# Fluxo de Deploy
+# Tutorial rapido de deploy
 
-## Branches
+Este projeto usa duas etapas:
 
-- `test`: recebe todos os ajustes primeiro e publica em um canal de teste do Firebase Hosting por deploy manual até os secrets do GitHub estarem completos.
-- `main`: recebe somente alterações aprovadas em `test` e publica em produção por deploy manual até os secrets do GitHub estarem completos.
+- `test`: recebe todo ajuste primeiro para validacao.
+- `main`: recebe apenas o que ja foi aprovado em `test` e vai para producao.
 
-## Sequência
+Links:
 
-1. Trabalhe localmente.
-2. Faça commit na branch `test`.
-3. Envie `test` para o GitHub.
-4. Valide o app no canal de teste.
-5. Faça merge de `test` para `main`.
-6. Envie `main` para publicar em produção.
+- Teste: https://crmcss-30b79--test-bi4ohn3r.web.app
+- Producao: https://crmcss-30b79.web.app
 
-Enquanto os secrets `NEXT_PUBLIC_*` não estiverem cadastrados no GitHub, publique manualmente:
+## 1. Antes de subir
+
+Rode as validacoes locais:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+```
+
+Se algum comando der erro, corrija antes de fazer deploy.
+
+## 2. Subir para teste
+
+Entre na branch `test` e atualize com o GitHub:
+
+```bash
+git checkout test
+git pull origin test
+```
+
+Se voce fez ajustes em outra branch ou na `main`, leve os commits para `test` antes de publicar.
+
+Depois envie a branch:
+
+```bash
+git push origin test
+```
+
+Publique no canal de teste do Firebase:
 
 ```bash
 npx firebase-tools hosting:channel:deploy test --project crmcss-30b79 --expires 30d
+```
+
+Abra e teste:
+
+```text
+https://crmcss-30b79--test-bi4ohn3r.web.app
+```
+
+Confira principalmente login, troca de abas, cadastro de produtos e paginas que foram alteradas.
+
+## 3. Aprovar teste e mandar para producao
+
+Quando o teste estiver aprovado, volte para `main`:
+
+```bash
+git checkout main
+git pull origin main
+```
+
+Junte a branch `test` na `main`:
+
+```bash
+git merge test
+```
+
+Envie a `main` para o GitHub:
+
+```bash
+git push origin main
+```
+
+Publique a producao no Firebase:
+
+```bash
 npx firebase-tools deploy --only hosting --project crmcss-30b79
 ```
 
-## Backend Firebase
+Abra e valide:
 
-Firestore Rules, Storage Rules e Cloud Functions usam permissões mais amplas do Google Cloud. Por enquanto, esse deploy fica manual pela máquina autorizada:
+```text
+https://crmcss-30b79.web.app
+```
+
+## 4. Deploy de regras e backend Firebase
+
+Use este comando quando mudar Firestore Rules, indexes, Storage Rules ou Functions:
 
 ```bash
 npx firebase-tools deploy --only firestore:rules,firestore:indexes,storage,functions --project crmcss-30b79 --force
 ```
 
-O deploy automático no GitHub Actions publica o Hosting.
+## 5. Observacoes importantes
 
-## Secrets necessários no GitHub
-
-Configure estes secrets em `Settings > Secrets and variables > Actions`:
-
-- `FIREBASE_SERVICE_ACCOUNT_CRMCSS_30B79`
-- `NEXT_PUBLIC_FIREBASE_API_KEY`
-- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
-- `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
-- `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
-- `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
-- `NEXT_PUBLIC_FIREBASE_APP_ID`
-- `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID`
-
-As variáveis `NEXT_PUBLIC_*` são usadas no frontend, mas ficam como GitHub Secrets para evitar expor chaves em arquivos versionados.
+- Nunca suba direto para producao sem testar no link de `test`.
+- O arquivo `.env.local` fica apenas na maquina e nao deve ir para o GitHub.
+- As chaves `NEXT_PUBLIC_FIREBASE_*` sao publicas para o frontend, mas devem ficar em secrets/configuracao do ambiente, nao em arquivos versionados.
+- Se aparecer erro de chunk ou tela branca depois do deploy, faca um refresh forte no navegador: `Cmd + Shift + R`.

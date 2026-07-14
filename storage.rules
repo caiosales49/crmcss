@@ -6,17 +6,23 @@ service firebase.storage {
       return request.auth != null;
     }
 
-    function userCompanyId() {
-      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.companyId;
+    function userEmail() {
+      return request.auth.token.email;
     }
 
-    function sameCompany(companyId) {
-      return signedIn() && userCompanyId() == companyId;
+    function memberDocumentId(storeId) {
+      return storeId + "_" + userEmail();
     }
 
-    match /companies/{companyId}/{allPaths=**} {
-      allow read: if sameCompany(companyId);
-      allow write: if sameCompany(companyId)
+    function hasStoreAccess(storeId) {
+      return signedIn()
+        && firestore.exists(/databases/(default)/documents/storeMembers/$(memberDocumentId(storeId)))
+        && firestore.get(/databases/(default)/documents/storeMembers/$(memberDocumentId(storeId))).data.status == "active";
+    }
+
+    match /companies/{companyId}/stores/{storeId}/{allPaths=**} {
+      allow read: if hasStoreAccess(storeId);
+      allow write: if hasStoreAccess(storeId)
         && request.resource.size < 8 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
     }

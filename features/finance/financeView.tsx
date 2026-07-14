@@ -12,7 +12,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useAuth } from "@/contexts/authProvider";
-import { formatCurrency } from "@/lib/format";
+import { useStore } from "@/contexts/storeProvider";
+import { formatCurrency, formatStatus, formatTransactionType } from "@/lib/format";
 import { FinanceService } from "@/services/financeService";
 import { financeSchema, type FinanceFormValues } from "@/validators/financeSchema";
 
@@ -29,19 +30,21 @@ const defaultValues: FinanceFormValues = {
 
 export function FinanceView() {
   const { companyId, user } = useAuth();
+  const { activeStoreId } = useStore();
   const client = useQueryClient();
   const form = useForm<FinanceFormValues>({ resolver: zodResolver(financeSchema), defaultValues });
   const transactions = useQuery({
-    queryKey: ["finance", companyId],
-    queryFn: () => FinanceService.list(companyId ?? ""),
-    enabled: Boolean(companyId)
+    queryKey: ["finance", activeStoreId],
+    queryFn: () => FinanceService.list(activeStoreId ?? ""),
+    enabled: Boolean(activeStoreId)
   });
 
   const create = useMutation({
     mutationFn: (values: FinanceFormValues) => {
-      if (!companyId || !user) throw new Error("Sessão inválida.");
+      if (!companyId || !activeStoreId || !user) throw new Error("Sessão inválida.");
       return FinanceService.create({
         companyId,
+        storeId: activeStoreId,
         createdBy: user.uid,
         updatedBy: user.uid,
         type: values.type,
@@ -108,11 +111,11 @@ export function FinanceView() {
                       <p className="truncate font-medium">{item.description}</p>
                       <p className="mt-1 truncate text-muted-foreground">{item.category}</p>
                     </div>
-                    <Badge tone={item.type === "revenue" ? "success" : "danger"}>{item.type}</Badge>
+                    <Badge tone={item.type === "revenue" ? "success" : "danger"}>{formatTransactionType(item.type)}</Badge>
                   </div>
                   <div className="mt-3 flex items-center justify-between gap-3">
                     <p className="font-medium">{formatCurrency(item.amount)}</p>
-                    <Badge>{item.status}</Badge>
+                    <Badge>{formatStatus(item.status)}</Badge>
                   </div>
                 </div>
               ))}
@@ -125,9 +128,9 @@ export function FinanceView() {
                   <tr key={item.id} className="border-t border-border">
                     <td className="py-3 font-medium">{item.description}</td>
                     <td>{item.category}</td>
-                    <td><Badge tone={item.type === "revenue" ? "success" : "danger"}>{item.type}</Badge></td>
+                    <td><Badge tone={item.type === "revenue" ? "success" : "danger"}>{formatTransactionType(item.type)}</Badge></td>
                     <td>{formatCurrency(item.amount)}</td>
-                    <td><Badge>{item.status}</Badge></td>
+                    <td><Badge>{formatStatus(item.status)}</Badge></td>
                   </tr>
                 ))}
               </tbody>

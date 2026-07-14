@@ -10,7 +10,9 @@ import {
   where,
   getDocs,
   serverTimestamp,
-  runTransaction
+  runTransaction,
+  type DocumentData,
+  type QueryDocumentSnapshot
 } from "firebase/firestore";
 import { db } from "@/firebase/client";
 import { FirestoreRepository } from "@/services/firestoreRepository";
@@ -22,26 +24,40 @@ function repository() {
 }
 
 export const ProductService = {
-  list(companyId: string) {
-    return repository().listByCompany(companyId, [orderBy("name", "asc"), limit(100)]);
+  list(storeId: string) {
+    return repository().listByStore(storeId, [orderBy("name", "asc"), limit(100)]);
   },
 
-  search(companyId: string, term: string) {
+  listPage(storeId: string, cursor?: QueryDocumentSnapshot<DocumentData> | null) {
+    return repository().pageByStore(storeId, [orderBy("name", "asc")], 25, cursor);
+  },
+
+  search(storeId: string, term: string) {
     const normalized = term.trim();
-    if (!normalized) return this.list(companyId);
-    return repository().listByCompany(companyId, [
+    if (!normalized) return this.list(storeId);
+    return repository().listByStore(storeId, [
       where("name", ">=", normalized),
       where("name", "<=", `${normalized}\uf8ff`),
       limit(25)
     ]);
   },
 
-  async findByBarcode(companyId: string, barcode: string) {
+  searchPage(storeId: string, term: string, cursor?: QueryDocumentSnapshot<DocumentData> | null) {
+    const normalized = term.trim();
+    if (!normalized) return this.listPage(storeId, cursor);
+    return repository().pageByStore(storeId, [
+      orderBy("name", "asc"),
+      where("name", ">=", normalized),
+      where("name", "<=", `${normalized}\uf8ff`)
+    ], 25, cursor);
+  },
+
+  async findByBarcode(storeId: string, barcode: string) {
     if (!db) throw new Error("Firebase não configurado.");
     const snapshot = await getDocs(
       query(
         repository().collectionRef(),
-        where("companyId", "==", companyId),
+        where("storeId", "==", storeId),
         where("barcode", "==", barcode),
         limit(1)
       )
@@ -110,6 +126,7 @@ export const ProductService = {
       const movementRef = doc(collection(firestore, "inventoryMovements"));
       transaction.set(movementRef, {
         companyId: product.companyId,
+        storeId: product.storeId,
         productId,
         productName: product.name,
         type: "in",

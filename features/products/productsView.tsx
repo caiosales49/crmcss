@@ -1,7 +1,9 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { InfiniteData } from "@tanstack/react-query";
+import type { DocumentData, QueryDocumentSnapshot } from "firebase/firestore";
 import { Copy, PackagePlus, Power, RotateCcw, Search, Trash2 } from "lucide-react";
 import { Fragment, useCallback, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
@@ -13,11 +15,14 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { BarcodeScanner } from "@/features/products/barcodeScanner";
 import { useAuth } from "@/contexts/authProvider";
+import { useStore } from "@/contexts/storeProvider";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { cn } from "@/lib/cn";
-import { formatCurrency, formatPercent } from "@/lib/format";
+import { formatCurrency, formatPercent, formatStatus } from "@/lib/format";
 import { ProductService } from "@/services/productService";
 import { calculateMargin, productSchema, type ProductFormValues } from "@/validators/productSchema";
 import type { Product } from "@/types/product";
+import type { FirestorePage } from "@/services/firestoreRepository";
 
 const defaultValues: ProductFormValues = {
   name: "",
@@ -62,8 +67,10 @@ function parseStockNumber(value: unknown) {
 
 export function ProductsView() {
   const { companyId, user } = useAuth();
+  const { activeStoreId } = useStore();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search);
   const [restockProductId, setRestockProductId] = useState<string | null>(null);
   const [restockQuantity, setRestockQuantity] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
@@ -74,29 +81,43 @@ export function ProductsView() {
   const costPrice = useWatch({ control: form.control, name: "costPrice" });
   const salePrice = useWatch({ control: form.control, name: "salePrice" });
 
-  const productsQuery = useQuery({
-    queryKey: ["products", companyId, search],
-    queryFn: () => ProductService.search(companyId ?? "", search),
-    enabled: Boolean(companyId)
+  const productsQuery = useInfiniteQuery<
+    FirestorePage<Product>,
+    Error,
+    InfiniteData<FirestorePage<Product>>,
+    [string, string | undefined, string],
+    QueryDocumentSnapshot<DocumentData> | null
+  >({
+    queryKey: ["products", activeStoreId, debouncedSearch],
+    queryFn: ({ pageParam }) => ProductService.searchPage(activeStoreId ?? "", debouncedSearch, pageParam),
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    initialPageParam: null,
+    enabled: Boolean(activeStoreId)
   });
+  const products = productsQuery.data?.pages.flatMap((page) => page.items) ?? [];
 
   const createMutation = useMutation({
     mutationFn: (values: ProductFormValues) => {
-      if (!companyId || !user) throw new Error("Sessão inválida.");
+      if (!companyId || !activeStoreId || !user) throw new Error("Sessão inválida.");
       return ProductService.create({
         ...values,
         companyId,
+        storeId: activeStoreId,
         createdBy: user.uid,
         updatedBy: user.uid,
         margin: calculateMargin(values.costPrice, values.salePrice)
       });
     },
     onSuccess: async () => {
+      setActionError(null);
       form.reset(defaultValues);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["products"] }),
         queryClient.invalidateQueries({ queryKey: ["dashboard"] })
       ]);
+    },
+    onError: (error) => {
+      setActionError(error instanceof Error ? error.message : "Não foi possível salvar o produto.");
     }
   });
 
@@ -265,8 +286,15 @@ export function ProductsView() {
                 {actionError}
               </div>
             )}
+            {productsQuery.error && (
+              <div className="mb-3 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                {productsQuery.error instanceof Error
+                  ? productsQuery.error.message
+                  : "Não foi possível carregar o catálogo."}
+              </div>
+            )}
             <div className="grid gap-3 md:hidden">
-              {(productsQuery.data ?? []).map((product) => (
+              {products.map((product) => (
                 <div
                   key={product.id}
                   className={cn(
@@ -279,7 +307,7 @@ export function ProductsView() {
                       <p className="truncate font-medium">{product.name}</p>
                       <p className="mt-1 truncate text-muted-foreground">{product.sku}</p>
                     </div>
-                    <Badge tone={product.status === "active" ? "success" : "neutral"}>{product.status}</Badge>
+                    <Badge tone={product.status === "active" ? "success" : "neutral"}>{formatStatus(product.status)}</Badge>
                   </div>
                   <div className="mt-3 grid gap-2 text-muted-foreground">
                     <p>Preço: <span className="font-medium text-foreground">{formatCurrency(product.salePrice)}</span></p>
@@ -368,7 +396,7 @@ export function ProductsView() {
                 </tr>
               </thead>
               <tbody>
-                {(productsQuery.data ?? []).map((product) => (
+                {products.map((product) => (
                   <Fragment key={product.id}>
                   <tr
                     className={cn(
@@ -391,7 +419,7 @@ export function ProductsView() {
                     </td>
                     <td>{product.minimumStock} {product.unit}</td>
                     <td>
-                      <Badge tone={product.status === "active" ? "success" : "neutral"}>{product.status}</Badge>
+                      <Badge tone={product.status === "active" ? "success" : "neutral"}>{formatStatus(product.status)}</Badge>
                     </td>
                     <td className="text-right">
                       <Button
@@ -459,6 +487,17 @@ export function ProductsView() {
               </tbody>
             </table>
             </div>
+            {productsQuery.hasNextPage && (
+              <div className="mt-4 flex justify-center">
+                <Button
+                  variant="secondary"
+                  disabled={productsQuery.isFetchingNextPage}
+                  onClick={() => void productsQuery.fetchNextPage()}
+                >
+                  {productsQuery.isFetchingNextPage ? "Carregando..." : "Carregar mais"}
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       </section>

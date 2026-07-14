@@ -11,7 +11,7 @@ export function useRequireAuth() {
 
   useEffect(() => {
     if (auth.loading) return;
-    if (!auth.user && !auth.profile) {
+    if (!auth.user) {
       router.replace("/login");
       return;
     }

@@ -3,19 +3,26 @@
 import { useQuery } from "@tanstack/react-query";
 import { endOfDay, endOfMonth, format, startOfDay, startOfMonth, subDays } from "date-fns";
 import { AlertTriangle, Banknote, Boxes, PackageCheck, Receipt, TrendingUp } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
-import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { PageHeader } from "@/components/layout/pageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { useAuth } from "@/contexts/authProvider";
+import { useStore } from "@/contexts/storeProvider";
 import { cn } from "@/lib/cn";
-import { formatCurrency, numberFormatter } from "@/lib/format";
+import { formatAlertTone, formatCurrency, numberFormatter } from "@/lib/format";
 import { DashboardService } from "@/services/dashboardService";
 
 const metricIcons = [Banknote, TrendingUp, Receipt, Boxes, AlertTriangle, PackageCheck];
+const DashboardChart = dynamic(
+  () => import("@/features/dashboard/dashboardChart").then((module) => module.DashboardChart),
+  {
+    ssr: false,
+    loading: () => <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Carregando gráfico...</div>
+  }
+);
 type PeriodPreset = "today" | "last7" | "last30" | "thisMonth" | "custom";
 
 function formatDateInput(date: Date) {
@@ -44,7 +51,7 @@ function getPresetRange(preset: Exclude<PeriodPreset, "custom">) {
 }
 
 export function DashboardView() {
-  const { companyId } = useAuth();
+  const { activeStoreId } = useStore();
   const [periodPreset, setPeriodPreset] = useState<PeriodPreset>("today");
   const todayRange = useMemo(() => getPresetRange("today"), []);
   const [customStartDate, setCustomStartDate] = useState(formatDateInput(todayRange.startDate));
@@ -61,12 +68,12 @@ export function DashboardView() {
   const query = useQuery({
     queryKey: [
       "dashboard",
-      companyId,
+      activeStoreId,
       selectedPeriod.startDate.toISOString(),
       selectedPeriod.endDate.toISOString()
     ],
-    queryFn: () => DashboardService.getOverview(companyId ?? "", selectedPeriod),
-    enabled: Boolean(companyId)
+    queryFn: () => DashboardService.getOverview(activeStoreId ?? "", selectedPeriod),
+    enabled: Boolean(activeStoreId)
   });
 
   const metrics = query.data?.metrics;
@@ -154,15 +161,7 @@ export function DashboardView() {
             <CardTitle>Fluxo do período</CardTitle>
           </CardHeader>
           <CardContent className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={query.data?.monthlyChart ?? []}>
-                <XAxis dataKey="label" tickLine={false} axisLine={false} />
-                <YAxis tickFormatter={(value) => formatCurrency(Number(value))} />
-                <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-                <Bar dataKey="revenue" name="Receita" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="expense" name="Despesa" fill="hsl(var(--destructive))" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            <DashboardChart data={query.data?.monthlyChart ?? []} />
           </CardContent>
         </Card>
 
@@ -178,7 +177,7 @@ export function DashboardView() {
               <div key={alert.id} className="rounded-md border border-border p-3">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm font-medium">{alert.title}</p>
-                  <Badge tone={alert.tone === "warning" ? "warning" : "neutral"}>{alert.tone}</Badge>
+                  <Badge tone={alert.tone === "warning" ? "warning" : "neutral"}>{formatAlertTone(alert.tone)}</Badge>
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">{alert.description}</p>
               </div>

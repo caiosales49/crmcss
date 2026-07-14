@@ -6,6 +6,14 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function userEmail() {
+      return request.auth.token.email;
+    }
+
+    function platformAdmin() {
+      return signedIn() && userEmail() == "caiosales49@gmail.com";
+    }
+
     function userProfile() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid));
     }
@@ -29,32 +37,209 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/companies/$(companyId)).data.ownerId == request.auth.uid;
     }
 
-    function validTenantCreate() {
-      return request.resource.data.companyId is string
-        && sameCompany(request.resource.data.companyId);
+    function ownsStoreData(data) {
+      return signedIn()
+        && (
+          data.ownerId == request.auth.uid
+          || (
+            data.ownerEmail is string
+            && data.ownerEmail == userEmail()
+          )
+        );
     }
 
-    function validTenantReadUpdateDelete() {
-      return resource.data.companyId is string
-        && sameCompany(resource.data.companyId);
+    function memberDocumentId(storeId) {
+      return storeId + "_" + userEmail();
+    }
+
+    function storeMember(storeId) {
+      return get(/databases/$(database)/documents/storeMembers/$(memberDocumentId(storeId)));
+    }
+
+    function hasStoreAccess(storeId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/storeMembers/$(memberDocumentId(storeId)))
+        && storeMember(storeId).data.status == "active";
+    }
+
+    function storeAccountActive(storeId) {
+      return !("accountStatus" in get(/databases/$(database)/documents/stores/$(storeId)).data)
+        || get(/databases/$(database)/documents/stores/$(storeId)).data.accountStatus != "suspended";
+    }
+
+    function platformAccountActive(accountId) {
+      return !exists(/databases/$(database)/documents/platformAccounts/$(accountId))
+        || get(/databases/$(database)/documents/platformAccounts/$(accountId)).data.status != "suspended";
+    }
+
+    function storePlatformAccountActive(storeId) {
+      return storeAccountActive(storeId)
+        && (
+          !("accountId" in get(/databases/$(database)/documents/stores/$(storeId)).data)
+          || platformAccountActive(get(/databases/$(database)/documents/stores/$(storeId)).data.accountId)
+        );
+    }
+
+    function canManageStore(storeId) {
+      return hasStoreAccess(storeId)
+        && storeMember(storeId).data.role in ["owner", "manager"];
+    }
+
+    function validStoreCreate() {
+      return request.resource.data.companyId is string
+        && request.resource.data.storeId is string
+        && sameCompany(request.resource.data.companyId)
+        && hasStoreAccess(request.resource.data.storeId)
+        && storePlatformAccountActive(request.resource.data.storeId)
+        && get(/databases/$(database)/documents/stores/$(request.resource.data.storeId)).data.companyId == request.resource.data.companyId;
+    }
+
+    function validStoreReadUpdateDelete() {
+      return (
+          (
+            resource.data.storeId is string
+            && hasStoreAccess(resource.data.storeId)
+            && storePlatformAccountActive(resource.data.storeId)
+          )
+          || (
+            !("storeId" in resource.data)
+            && resource.data.companyId is string
+            && ownerOfCompany(resource.data.companyId)
+          )
+        );
     }
 
     match /users/{userId} {
-      allow read: if ownsUserDocument(userId) || sameCompany(resource.data.companyId);
+      allow read: if platformAdmin() || ownsUserDocument(userId) || sameCompany(resource.data.companyId);
       allow create: if ownsUserDocument(userId)
-        && request.resource.data.companyId == userId
-        && request.resource.data.role == "owner";
+        && request.resource.data.email == userEmail()
+        && request.resource.data.role in ["owner", "manager", "employee"];
       allow update: if ownsUserDocument(userId) || ownerOfCompany(resource.data.companyId);
       allow delete: if false;
     }
 
     match /companies/{companyId} {
-      allow read: if sameCompany(companyId);
+      allow read: if platformAdmin() || sameCompany(companyId);
       allow create: if signedIn()
         && request.auth.uid == companyId
         && request.resource.data.ownerId == request.auth.uid;
-      allow update: if sameCompany(companyId);
+      allow update: if ownerOfCompany(companyId);
       allow delete: if ownerOfCompany(companyId);
+    }
+
+    match /stores/{storeId} {
+      allow read: if platformAdmin() || hasStoreAccess(storeId) || ownerOfCompany(resource.data.companyId) || ownsStoreData(resource.data);
+      allow create: if signedIn()
+        && (
+          ownerOfCompany(request.resource.data.companyId)
+          || (
+            request.resource.data.companyId == request.auth.uid
+            && request.resource.data.ownerId == request.auth.uid
+          )
+        )
+        && request.resource.data.ownerId == request.auth.uid
+        && platformAccountActive(request.resource.data.companyId);
+      allow update, delete: if platformAdmin() || ((ownerOfCompany(resource.data.companyId) || ownsStoreData(resource.data)) && storePlatformAccountActive(storeId));
+    }
+
+    match /invitations/{invitationId} {
+      allow read: if platformAdmin() || signedIn()
+        && (
+          resource.data.email == userEmail()
+          || canManageStore(resource.data.storeId)
+        );
+      allow create: if signedIn()
+        && canManageStore(request.resource.data.storeId)
+        && storePlatformAccountActive(request.resource.data.storeId)
+        && request.resource.data.companyId is string
+        && request.resource.data.status == "pending"
+        && request.resource.data.role in ["manager", "employee"];
+      allow update: if signedIn()
+        && (
+          (canManageStore(resource.data.storeId) && storePlatformAccountActive(resource.data.storeId))
+          || (
+            resource.data.email == userEmail()
+            && resource.data.status == "pending"
+            && request.resource.data.status == "accepted"
+            && request.resource.data.userId == request.auth.uid
+            && request.resource.data.companyId == resource.data.companyId
+            && request.resource.data.storeId == resource.data.storeId
+          )
+        );
+      allow delete: if platformAdmin() || (signedIn() && canManageStore(resource.data.storeId) && storePlatformAccountActive(resource.data.storeId));
+    }
+
+    match /storeMembers/{memberId} {
+      allow read: if platformAdmin() || signedIn()
+        && (
+          resource.data.email == userEmail()
+          || ownerOfCompany(resource.data.companyId)
+          || canManageStore(resource.data.storeId)
+        );
+      allow create: if signedIn()
+        && (
+          ownerOfCompany(request.resource.data.companyId)
+          || (
+            request.resource.data.companyId == request.auth.uid
+            && request.resource.data.userId == request.auth.uid
+            && request.resource.data.email == userEmail()
+            && request.resource.data.role == "owner"
+            && request.resource.data.status == "active"
+          )
+          || (
+            request.resource.data.storeId is string
+            && get(/databases/$(database)/documents/stores/$(request.resource.data.storeId)).data.ownerId == request.auth.uid
+            && request.resource.data.userId == request.auth.uid
+            && request.resource.data.email == userEmail()
+            && request.resource.data.role == "owner"
+            && request.resource.data.status == "active"
+          )
+        );
+      allow update: if platformAdmin() || signedIn()
+        && (
+          ownerOfCompany(resource.data.companyId)
+          || (
+            resource.data.email == userEmail()
+            && request.resource.data.email == resource.data.email
+            && request.resource.data.storeId == resource.data.storeId
+            && request.resource.data.companyId == resource.data.companyId
+            && request.resource.data.userId == request.auth.uid
+            && request.resource.data.status == "active"
+          )
+        );
+      allow delete: if platformAdmin() || (signedIn() && ownerOfCompany(resource.data.companyId));
+    }
+
+    match /platformAccounts/{accountId} {
+      allow read: if platformAdmin()
+        || sameCompany(accountId)
+        || (signedIn() && resource.data.ownerId == request.auth.uid)
+        || (signedIn() && resource.data.ownerEmail == userEmail());
+      allow create: if platformAdmin()
+        || (
+          signedIn()
+          && accountId == request.auth.uid
+          && request.resource.data.ownerId == request.auth.uid
+          && request.resource.data.ownerEmail == userEmail()
+          && request.resource.data.status == "active"
+        );
+      allow update: if platformAdmin()
+        || (
+          signedIn()
+          && accountId == request.auth.uid
+          && resource.data.ownerId == request.auth.uid
+          && request.resource.data.ownerId == request.auth.uid
+          && request.resource.data.ownerEmail == userEmail()
+          && request.resource.data.status == "active"
+        )
+        && !(resource.data.ownerEmail == userEmail() && request.resource.data.status == "suspended");
+      allow delete: if false;
+    }
+
+    match /platformMessages/{messageId} {
+      allow read: if platformAdmin() || sameCompany(resource.data.accountId);
+      allow create, update: if platformAdmin();
+      allow delete: if false;
     }
 
     match /subscriptions/{subscriptionId} {
@@ -67,69 +252,69 @@ service cloud.firestore {
     }
 
     match /products/{documentId} {
-      allow read: if validTenantReadUpdateDelete();
-      allow create: if validTenantCreate();
-      allow update, delete: if validTenantReadUpdateDelete();
+      allow read: if validStoreReadUpdateDelete();
+      allow create: if validStoreCreate();
+      allow update, delete: if validStoreReadUpdateDelete();
     }
 
     match /categories/{documentId} {
-      allow read: if validTenantReadUpdateDelete();
-      allow create: if validTenantCreate();
-      allow update, delete: if validTenantReadUpdateDelete();
+      allow read: if validStoreReadUpdateDelete();
+      allow create: if validStoreCreate();
+      allow update, delete: if validStoreReadUpdateDelete();
     }
 
     match /suppliers/{documentId} {
-      allow read: if validTenantReadUpdateDelete();
-      allow create: if validTenantCreate();
-      allow update, delete: if validTenantReadUpdateDelete();
+      allow read: if validStoreReadUpdateDelete();
+      allow create: if validStoreCreate();
+      allow update, delete: if validStoreReadUpdateDelete();
     }
 
     match /customers/{documentId} {
-      allow read: if validTenantReadUpdateDelete();
-      allow create: if validTenantCreate();
-      allow update, delete: if validTenantReadUpdateDelete();
+      allow read: if validStoreReadUpdateDelete();
+      allow create: if validStoreCreate();
+      allow update, delete: if validStoreReadUpdateDelete();
     }
 
     match /sales/{documentId} {
-      allow read: if validTenantReadUpdateDelete();
-      allow create: if validTenantCreate();
-      allow update: if validTenantReadUpdateDelete();
+      allow read: if validStoreReadUpdateDelete();
+      allow create: if validStoreCreate();
+      allow update: if validStoreReadUpdateDelete();
       allow delete: if false;
     }
 
     match /inventoryMovements/{documentId} {
-      allow read: if validTenantReadUpdateDelete();
-      allow create: if validTenantCreate();
+      allow read: if validStoreReadUpdateDelete();
+      allow create: if validStoreCreate();
       allow update, delete: if false;
     }
 
     match /financialTransactions/{documentId} {
-      allow read: if validTenantReadUpdateDelete();
-      allow create: if validTenantCreate();
-      allow update, delete: if validTenantReadUpdateDelete();
+      allow read: if validStoreReadUpdateDelete();
+      allow create: if validStoreCreate();
+      allow update, delete: if validStoreReadUpdateDelete();
     }
 
     match /reports/{documentId} {
-      allow read: if validTenantReadUpdateDelete();
-      allow create: if validTenantCreate();
+      allow read: if validStoreReadUpdateDelete();
+      allow create: if validStoreCreate();
       allow update, delete: if false;
     }
 
     match /settings/{documentId} {
-      allow read: if validTenantReadUpdateDelete();
-      allow create: if validTenantCreate();
-      allow update, delete: if validTenantReadUpdateDelete();
+      allow read: if validStoreReadUpdateDelete();
+      allow create: if validStoreCreate();
+      allow update, delete: if validStoreReadUpdateDelete();
     }
 
     match /notifications/{documentId} {
-      allow read: if validTenantReadUpdateDelete();
-      allow create, update: if validTenantCreate() || validTenantReadUpdateDelete();
-      allow delete: if validTenantReadUpdateDelete();
+      allow read: if validStoreReadUpdateDelete();
+      allow create, update: if validStoreCreate() || validStoreReadUpdateDelete();
+      allow delete: if validStoreReadUpdateDelete();
     }
 
     match /logs/{documentId} {
       allow read: if ownerOfCompany(resource.data.companyId);
-      allow create: if validTenantCreate();
+      allow create: if validStoreCreate();
       allow update, delete: if false;
     }
   }

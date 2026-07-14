@@ -8,6 +8,7 @@ import {
   limit,
   orderBy,
   query,
+  startAfter,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -15,8 +16,14 @@ import {
   type DocumentData,
   type Firestore,
   type QueryConstraint,
+  type QueryDocumentSnapshot,
   type WithFieldValue
 } from "firebase/firestore";
+
+export interface FirestorePage<T> {
+  items: T[];
+  nextCursor: QueryDocumentSnapshot<DocumentData> | null;
+}
 
 export class FirestoreRepository<T extends { id: string; companyId: string }> {
   constructor(
@@ -48,8 +55,44 @@ export class FirestoreRepository<T extends { id: string; companyId: string }> {
     return snapshot.docs.map((item) => ({ id: item.id, ...item.data() }) as T);
   }
 
+  async listByStore(storeId: string, constraints: QueryConstraint[] = []) {
+    const snapshot = await getDocs(
+      query(
+        this.collectionRef(),
+        where("storeId", "==", storeId),
+        ...constraints
+      )
+    );
+    return snapshot.docs.map((item) => ({ id: item.id, ...item.data() }) as T);
+  }
+
+  async pageByStore(
+    storeId: string,
+    constraints: QueryConstraint[] = [],
+    pageSize = 25,
+    cursor?: QueryDocumentSnapshot<DocumentData> | null
+  ): Promise<FirestorePage<T>> {
+    const snapshot = await getDocs(
+      query(
+        this.collectionRef(),
+        where("storeId", "==", storeId),
+        ...constraints,
+        ...(cursor ? [startAfter(cursor)] : []),
+        limit(pageSize)
+      )
+    );
+    return {
+      items: snapshot.docs.map((item) => ({ id: item.id, ...item.data() }) as T),
+      nextCursor: snapshot.docs.length === pageSize ? snapshot.docs.at(-1) ?? null : null
+    };
+  }
+
   async listRecent(companyId: string, field = "createdAt", pageSize = 20) {
     return this.listByCompany(companyId, [orderBy(field, "desc"), limit(pageSize)]);
+  }
+
+  async listRecentByStore(storeId: string, field = "createdAt", pageSize = 20) {
+    return this.listByStore(storeId, [orderBy(field, "desc"), limit(pageSize)]);
   }
 
   async create(input: Omit<T, "id" | "createdAt" | "updatedAt">) {
